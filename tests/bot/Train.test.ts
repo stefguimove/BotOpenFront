@@ -18,10 +18,8 @@ import {
 } from "../../bot/train/reinforce";
 import {
   defaultTrainOptions,
-  episodesToReachMinimum,
   gameIDFor,
   loadCheckpoint,
-  MIN_TRAINING_GAMES,
   runEpisode,
   saveCheckpoint,
   train,
@@ -114,34 +112,6 @@ describe("checkpoints", () => {
   });
 });
 
-describe("minimum games", () => {
-  test("three iterations of one game are raised to the floor", () => {
-    expect(episodesToReachMinimum(2, 1, MIN_TRAINING_GAMES)).toBe(50);
-    expect(episodesToReachMinimum(10, 2, MIN_TRAINING_GAMES)).toBe(10);
-    expect(episodesToReachMinimum(3, 1, MIN_TRAINING_GAMES)).toBe(34);
-  });
-
-  test("never lowers what the caller asked for", () => {
-    expect(episodesToReachMinimum(10, 200, MIN_TRAINING_GAMES)).toBe(200);
-  });
-
-  test("disables the floor with a zero minimum", () => {
-    expect(episodesToReachMinimum(2, 1, 0)).toBe(1);
-  });
-
-  test("treats a non-positive iteration count as one round", () => {
-    expect(episodesToReachMinimum(0, 1, MIN_TRAINING_GAMES)).toBe(100);
-  });
-
-  test("the default options already reach 100 games", () => {
-    const options = defaultTrainOptions();
-    expect(
-      options.iterations * options.episodesPerIteration,
-    ).toBeGreaterThanOrEqual(MIN_TRAINING_GAMES);
-    expect(options.minGames).toBe(MIN_TRAINING_GAMES);
-  });
-});
-
 describe("gameIDFor", () => {
   test("is 8 characters and unique per episode", () => {
     const a = gameIDFor(1, 1);
@@ -180,9 +150,6 @@ describe("train", () => {
       const options = defaultTrainOptions({
         iterations: 2,
         episodesPerIteration: 1,
-        // Tests keep the run tiny: the 100-game floor is exercised by the
-        // pure helper below instead of by playing 100 games here.
-        minGames: 0,
         episodeTicks: 60,
         decisionInterval: 10,
         config: compactConfig(),

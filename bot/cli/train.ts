@@ -19,7 +19,6 @@ import {
   defaultTrainOptions,
   evaluateWeights,
   loadCheckpoint,
-  MIN_TRAINING_GAMES,
   saveCheckpoint,
   train,
 } from "../train/train";
@@ -32,7 +31,6 @@ async function main(): Promise<void> {
   const options = defaultTrainOptions({
     iterations: numArg(args, "iterations", 10),
     episodesPerIteration: numArg(args, "episodes", 10),
-    minGames: numArg(args, "min-games", MIN_TRAINING_GAMES),
     episodeTicks: numArg(args, "episode-ticks", EPISODE_TICKS),
     decisionInterval: numArg(args, "decision-interval", DECISION_INTERVAL),
     config: preset === "compact" ? compactConfig() : targetConfig(),

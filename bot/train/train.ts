@@ -147,36 +147,10 @@ export function loadCheckpoint(file: string): CheckpointFile {
   return { version: 1, iteration: raw.iteration ?? 0, weights };
 }
 
-/**
- * A run below this many games has too little data to update a policy on:
- * one game is a single random spawn, not a training signal. The floor is
- * enforced by `train()` (see `episodesToReachMinimum`).
- */
-export const MIN_TRAINING_GAMES = 100;
-
-/**
- * Episodes per iteration needed to reach `minGames` in `iterations`
- * iterations, never below what the caller asked for.
- */
-export function episodesToReachMinimum(
-  iterations: number,
-  requested: number,
-  minGames: number,
-): number {
-  const rounds = Math.max(1, Math.floor(iterations));
-  const needed = Math.ceil(Math.max(0, minGames) / rounds);
-  return Math.max(1, Math.max(Math.floor(requested), needed));
-}
-
 export interface TrainOptions {
   iterations: number;
   /** Episodes per iteration. Each gets its own GameRunner, sequentially. */
   episodesPerIteration: number;
-  /**
-   * Floor on the total number of games played (iterations x episodes). 0
-   * disables the floor, which only tests do.
-   */
-  minGames: number;
   episodeTicks: number;
   decisionInterval: number;
   config: GameConfig;
@@ -198,7 +172,6 @@ export function defaultTrainOptions(
   return {
     iterations: 10,
     episodesPerIteration: 10,
-    minGames: MIN_TRAINING_GAMES,
     episodeTicks: EPISODE_TICKS,
     decisionInterval: DECISION_INTERVAL,
     config: targetConfig(),
@@ -232,34 +205,23 @@ export interface TrainResult {
   params: number;
   /** Total games played across all iterations. */
   games: number;
-  /** Episodes per iteration actually used (after the minimum-game floor). */
+  /** Episodes per iteration actually used. */
   episodesPerIteration: number;
 }
 
 /**
  * Minimal REINFORCE loop: play episodes, shape rewards, update the four
  * specialised models independently. Episodes run sequentially in one process;
- * `episodesPerIteration` is the batching knob for a low-core machine.
+ * `episodesPerIteration` is the batching knob for a low-core machine: the
+ * total number of games is exactly `iterations * episodesPerIteration`, and
+ * nothing adjusts it behind the caller's back.
  */
 export async function train(options: TrainOptions): Promise<TrainResult> {
   let weights = createWeights(options.seed);
   const history: IterationReport[] = [];
   let episodeCounter = 0;
   let gamesPlayed = 0;
-
-  const episodesPerIteration = episodesToReachMinimum(
-    options.iterations,
-    options.episodesPerIteration,
-    options.minGames,
-  );
-  if (episodesPerIteration !== options.episodesPerIteration) {
-    options.log(
-      `raising episodes per iteration from ${options.episodesPerIteration} ` +
-        `to ${episodesPerIteration}: ${options.iterations} iterations x ` +
-        `${options.episodesPerIteration} games is below the ` +
-        `${options.minGames}-game minimum`,
-    );
-  }
+  const episodesPerIteration = Math.max(1, options.episodesPerIteration);
 
   for (let iteration = 1; iteration <= options.iterations; iteration++) {
     const accumulator = new GradientAccumulator();

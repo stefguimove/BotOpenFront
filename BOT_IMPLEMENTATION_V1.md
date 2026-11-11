@@ -1004,7 +1004,6 @@ npm run bot:train -- \
 | `--workers`           | `4`               | Nombre de `GameRunner` parallèles           |
 | `--iterations`        | `10`              | Itérations d'entraînement                   |
 | `--episodes`          | `10`              | Parties par itération (rollouts batchés)    |
-| `--min-games`         | `100`             | Plancher du nombre total de parties jouées  |
 | `--episode-ticks`     | `1800`            | Horizon d'un épisode (3 min)                |
 | `--reward-profile`    | `v1`              | Jeu de poids de récompense                  |
 | `--decision-interval` | `10`              | Décision toutes les N ticks                 |
@@ -1017,12 +1016,11 @@ npm run bot:train -- \
 | `--save-replay-every` | `0`               | Replay toutes les N itérations (0 = jamais) |
 | `--run-dir`           | `bot/runs`        | Logs et métriques                           |
 
-Le nombre total de parties vaut `iterations × episodes`. Un entraînement sous
-`--min-games` (100 par défaut) est **relevé automatiquement** :
-`train()` augmente `episodesPerIteration` à `ceil(minGames / iterations)` et le
-log l'annonce. Une seule partie n'est pas un signal d'apprentissage : elle ne
-représente qu'un spawn aléatoire. `--min-games 0` désactive le plancher (tests
-uniquement).
+Le nombre total de parties vaut exactement `iterations × episodes` : rien ne
+l'ajuste automatiquement. Les valeurs par défaut (10 × 10) donnent 100 parties.
+Pour un run plus court pendant la mise au point, baisser `--episodes` en
+connaissance de cause — une seule partie ne représente qu'un spawn aléatoire et
+n'apprend rien d'utile.
 
 ### 15.4 Pipeline d'entraînement
 
