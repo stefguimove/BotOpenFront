@@ -22,12 +22,12 @@ export interface RewardParams {
   /** Terminal weight on a win (0 for 3-minute episodes). */
   wWin: number;
   /**
-   * Per-decision penalty when the standing army is below `lowArmyRatio` of the
-   * cap. Without it, dumping every troop is free, and the policy learns to
-   * chain attacks forever without ever holding ground.
+   * Per-decision penalty at a full deficit, i.e. an empty army while the floor
+   * is `lowArmyRatio` of the cap. Without it, dumping every troop is free, and
+   * the policy learns to chain attacks forever without ever holding ground.
    */
   cLowArmy: number;
-  /** Army floor, as a fraction of maxTroops. */
+  /** Army floor, as a fraction of maxTroops. Below it, the penalty starts. */
   lowArmyRatio: number;
   /** Maximum total low-army penalty per episode. */
   lowArmyCap: number;
@@ -51,12 +51,12 @@ export const REWARD_V1: RewardParams = {
   wEndTiles: 1,
   wEndMaxTroops: 0.5,
   wWin: 0,
-  // Calibrated against the tile term: an episode gains ~1e4 tiles ≈ 10 reward,
-  // so a capped low-army penalty of 1 (~10 % of it) is noticeable but cannot
-  // dominate. At 0.002/cap 0.2 the signal was lost in the noise.
-  cLowArmy: 0.005,
-  lowArmyRatio: 0.05,
-  lowArmyCap: 1,
+  // Deliberately strong: the army floor is 18 % of the cap, a full deficit
+  // costs 0.02 per decision, and an episode can lose up to 3 in total — about
+  // a third of the ~10 the tile term pays for an episode's worth of conquest.
+  cLowArmy: 0.02,
+  lowArmyRatio: 0.18,
+  lowArmyCap: 3,
   maxTroopsRef: 100_000,
   clip: 1,
   gamma: 1,

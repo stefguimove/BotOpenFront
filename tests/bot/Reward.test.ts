@@ -99,14 +99,25 @@ describe("terminalReward", () => {
 });
 
 describe("low-army penalty", () => {
-  test("costs nothing while the army is healthy", () => {
-    const state = createRewardState(0, 1_000);
-    const step = stepReward(state, REWARD_V1, 0, 1_000, {
-      troops: 50_000,
-      maxTroops: 100_000,
-    });
-    expect(step.lowArmy).toBe(0);
-    expect(state.lowArmyPenalty).toBe(0);
+  test("starts at 18 % of the cap", () => {
+    const atFloor = createRewardState(0, 1_000);
+    const belowFloor = createRewardState(0, 1_000);
+    const cap = 100_000;
+    const floor = REWARD_V1.lowArmyRatio * cap;
+
+    expect(REWARD_V1.lowArmyRatio).toBe(0.18);
+    expect(
+      stepReward(atFloor, REWARD_V1, 0, 1_000, {
+        troops: floor,
+        maxTroops: cap,
+      }).lowArmy,
+    ).toBe(0);
+    expect(
+      stepReward(belowFloor, REWARD_V1, 0, 1_000, {
+        troops: floor - 1,
+        maxTroops: cap,
+      }).lowArmy,
+    ).toBeLessThan(0);
   });
 
   test("costs nothing when the army state is unknown", () => {
@@ -117,9 +128,9 @@ describe("low-army penalty", () => {
   test("punishes an empty army proportionally to the deficit", () => {
     const small = createRewardState(0, 1_000);
     const empty = createRewardState(0, 1_000);
-    // Floor is 5% of 100k = 5k; 4k is a 20% deficit, 0 is a full one.
+    // Floor is 18 % of 100k = 18k; 9k is half of it, 0 is a full deficit.
     const part = stepReward(small, REWARD_V1, 0, 1_000, {
-      troops: 4_000,
+      troops: 9_000,
       maxTroops: 100_000,
     });
     const full = stepReward(empty, REWARD_V1, 0, 1_000, {
@@ -131,21 +142,26 @@ describe("low-army penalty", () => {
     expect(full.lowArmy).toBeCloseTo(-REWARD_V1.cLowArmy, 10);
   });
 
-  test("is bounded by the episode cap", () => {
+  test("is strong: a full deficit costs 0.02 per decision, 3 per episode", () => {
     const state = createRewardState(0, 1_000);
+    const step = stepReward(state, REWARD_V1, 0, 1_000, {
+      troops: 0,
+      maxTroops: 100_000,
+    });
+    expect(step.lowArmy).toBeCloseTo(-0.02, 10);
+
     for (let i = 0; i < 10_000; i++) {
       stepReward(state, REWARD_V1, 0, 1_000, { troops: 0, maxTroops: 100_000 });
     }
-    expect(state.lowArmyPenalty).toBeLessThanOrEqual(
-      REWARD_V1.lowArmyCap + 1e-12,
-    );
+    expect(state.lowArmyPenalty).toBeCloseTo(REWARD_V1.lowArmyCap, 10);
+    expect(REWARD_V1.lowArmyCap).toBe(3);
   });
 
-  test("stays small next to the tile term", () => {
-    // A 10-tile gain must still outweigh a full low-army penalty, otherwise
-    // the policy would be paid to sit still.
+  test("still lets a real conquest pay off", () => {
+    // Holding 100 tiles (0.1) must beat a full low-army deficit (-0.02),
+    // otherwise the policy would be paid to never move.
     const state = createRewardState(0, 1_000);
-    const step = stepReward(state, REWARD_V1, 0, 1_010, {
+    const step = stepReward(state, REWARD_V1, 0, 1_100, {
       troops: 0,
       maxTroops: 100_000,
     });

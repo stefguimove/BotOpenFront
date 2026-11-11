@@ -607,14 +607,23 @@ sinon :
 
 | Paramètre      | Valeur | Rôle                                     |
 | -------------- | ------ | ---------------------------------------- |
-| `c_low`        | 0,005  | pénalité par décision au déficit maximal |
-| `lowArmyRatio` | 0,05   | plancher d'armée, en fraction du plafond |
-| `lowArmyCap`   | 1,0    | cumul maximal par épisode                |
+| `lowArmyRatio` | 0,18   | plancher d'armée, en fraction du plafond |
+| `c_low`        | 0,02   | pénalité par décision au déficit maximal |
+| `lowArmyCap`   | 3,0    | cumul maximal par épisode                |
 
-Calibration : un épisode gagne ~10⁴ tuiles, soit ≈ 10 de récompense de tuile ;
-un plafond de 1,0 représente ~10 % de ce signal — visible pour l'apprentissage,
-incapable de dominer. La première valeur essayée (0,002 / plafond 0,2) était
-noyée dans le bruit.
+Calibration : la pénalité est **volontairement forte** (décision du
+2026-11-11). Le plancher est à **18 %** du plafond : en dessous, la pénalité
+démarre et croît avec le déficit ; une armée vide coûte 0,02 par décision, soit
+3,0 sur un épisode (plafond atteint en ~150 décisions). À comparer aux ~10 de
+récompense de tuiles d'un épisode conquérant : ~30 % du signal.
+
+Ordres de grandeur — la pénalité reste sous le gain d'une vraie conquête :
+
+| Situation                         | Récompense               |
+| --------------------------------- | ------------------------ |
+| 100 tuiles gagnées, armée vide    | +0,1 − 0,02 = **+0,08**  |
+| 10 tuiles gagnées, armée vide     | +0,01 − 0,02 = **−0,01** |
+| immobile, armée à 18 % du plafond | **0**                    |
 
 Propriétés :
 
