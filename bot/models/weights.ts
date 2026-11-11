@@ -30,6 +30,19 @@ export const MODEL_OUTPUT_DIM: Record<ModelName, number> = {
   diplomacyTarget: 1,
 };
 
+/**
+ * Models that score every candidate with their one-output MLP and take a
+ * softmax over the candidate list (see BOT_IMPLEMENTATION_V1.md §4). Their
+ * `chosen` index is a candidate index, not an output index, so the policy
+ * gradient has to backpropagate through every candidate.
+ */
+export const LISTWISE_MODELS: ReadonlySet<ModelName> = new Set<ModelName>([
+  "attack",
+  "build",
+  "upgrade",
+  "diplomacyTarget",
+]);
+
 export type AgentWeights = Record<ModelName, MlpParams>;
 
 export const MODEL_NAMES: readonly ModelName[] = [

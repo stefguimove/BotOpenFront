@@ -1,13 +1,16 @@
 import type { GameConfig } from "@openfront/engine-api/Schemas";
+import type { Game } from "@openfront/engine/game/Game";
 import type { TrainingWheels } from "../actions/trainingWheels";
 import {
   createRewardState,
+  potentialOf,
   stepReward,
   terminalReward,
   type RewardParams,
+  type RewardState,
 } from "../config/reward";
 import type { AgentWeights } from "../models/weights";
-import { BotAgent } from "../runtime/agent";
+import { BotAgent, type DecisionRecord } from "../runtime/agent";
 import { createBotGame, type BotGame } from "../runtime/gameEnv";
 import { playEpisode, type EpisodeResult } from "../runtime/loop";
 import type { TrajectoryStep } from "./reinforce";
@@ -33,6 +36,76 @@ export interface RunEpisodeOptions {
   trainingWheels?: TrainingWheels | null;
 }
 
+/** The slice of the game state the reward reads at each decision. */
+export interface RewardSample {
+  goldEarned: number;
+  tiles: number;
+  troops: number;
+  maxTroops: number;
+}
+
+/**
+ * Turns the states read at the decisions into per-decision rewards.
+ *
+ * The state is read just before the decision's own tick executes, so it
+ * already contains the ticks that followed the previous decision. Its delta
+ * therefore belongs to the records sampled at that previous decision, not to
+ * the ones being sampled now: `observe` credits the previous decision and
+ * buffers the new one. `finish` closes the last interval and adds the
+ * terminal term to it.
+ */
+export class EpisodeRewards {
+  readonly steps: TrajectoryStep[] = [];
+  private readonly state: RewardState = createRewardState(0, 0);
+  private pending: readonly DecisionRecord[] = [];
+  private seeded = false;
+
+  constructor(private readonly params: RewardParams) {}
+
+  /** Called at every decision, before that decision's tick executes. */
+  observe(sample: RewardSample, decisions: readonly DecisionRecord[]): void {
+    if (!this.seeded) {
+      // Seed at the first decision so its own interval is measured by the next
+      // observation instead of a free spawn-phase delta.
+      this.state.potential = potentialOf(sample.goldEarned, this.params);
+      this.state.goldEarned = sample.goldEarned;
+      this.state.tiles = sample.tiles;
+      this.seeded = true;
+    } else {
+      this.credit(this.advance(sample).reward);
+    }
+    this.pending = decisions;
+  }
+
+  /** Closes the interval left open by the last decision, adding `terminal`. */
+  finish(sample: RewardSample, terminal: number): void {
+    if (!this.seeded) return;
+    const last = this.advance(sample);
+    if (this.pending.length > 0) {
+      this.credit(last.reward + terminal);
+    } else if (this.steps.length > 0) {
+      this.steps[this.steps.length - 1].reward += terminal;
+    }
+  }
+
+  private advance(sample: RewardSample) {
+    return stepReward(
+      this.state,
+      this.params,
+      sample.goldEarned,
+      sample.tiles,
+      { troops: sample.troops, maxTroops: sample.maxTroops },
+    );
+  }
+
+  private credit(reward: number): void {
+    if (this.pending.length === 0) return;
+    const share = reward / this.pending.length;
+    for (const record of this.pending)
+      this.steps.push({ record, reward: share });
+  }
+}
+
 /**
  * Plays one episode and returns the per-decision trajectory with shaped
  * rewards plus the terminal term.
@@ -52,9 +125,16 @@ export async function runEpisode(
     trainingWheels: options.trainingWheels,
   });
 
-  const reward = createRewardState(0, 0);
-  const steps: TrajectoryStep[] = [];
-  let initialised = false;
+  const rewards = new EpisodeRewards(options.reward);
+  const sample = (g: Game): RewardSample => {
+    const me = g.playerByClientID(game.clientID);
+    return {
+      goldEarned: me === null ? 0 : Number(me.goldEarned()),
+      tiles: me?.numTilesOwned() ?? 0,
+      troops: me === null ? 0 : Number(me.troops()),
+      maxTroops: me === null ? 0 : g.config().maxTroops(me),
+    };
+  };
 
   const result = playEpisode(game, {
     maxTicks: options.episodeTicks,
@@ -62,28 +142,8 @@ export async function runEpisode(
     agent,
     hooks: {
       onDecision: ({ game: g, decisions }) => {
-        const me = g.playerByClientID(game.clientID);
-        if (me === null) return;
-        const goldEarned = Number(me.goldEarned());
-        const tiles = me.numTilesOwned();
-        if (!initialised) {
-          // Seed the potential so the first decision earns no free reward.
-          reward.potential = Math.log1p(Math.max(0, goldEarned));
-          reward.goldEarned = goldEarned;
-          reward.tiles = tiles;
-          initialised = true;
-          return;
-        }
-        const step = stepReward(reward, options.reward, goldEarned, tiles, {
-          troops: Number(me.troops()),
-          maxTroops: g.config().maxTroops(me),
-        });
-        for (const record of decisions) {
-          steps.push({
-            record,
-            reward: step.reward / Math.max(1, decisions.length),
-          });
-        }
+        if (g.playerByClientID(game.clientID) === null) return;
+        rewards.observe(sample(g), decisions);
       },
     },
   });
@@ -96,9 +156,7 @@ export async function runEpisode(
     me === null ? 0 : game.game.config().maxTroops(me),
     result.stats.winner === "bot",
   );
-  if (steps.length > 0) {
-    steps[steps.length - 1].reward += terminal.reward;
-  }
+  rewards.finish(sample(game.game), terminal.reward);
 
-  return { game, result, steps, seed: options.seed };
+  return { game, result, steps: rewards.steps, seed: options.seed };
 }

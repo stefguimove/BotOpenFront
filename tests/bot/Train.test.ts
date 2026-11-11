@@ -4,12 +4,16 @@ import path from "path";
 import { describe, expect, test } from "vitest";
 import { REWARD_V1 } from "../../bot/config/reward";
 import { compactConfig } from "../../bot/config/target";
+import { cloneParams, mlpForward } from "../../bot/models/mlp";
+import { maskedSoftmax } from "../../bot/models/policy";
 import {
   createWeights,
+  MODEL_INPUT_DIM,
   MODEL_NAMES,
   totalParams,
 } from "../../bot/models/weights";
 import type { DecisionRecord } from "../../bot/runtime/agent";
+import { EpisodeRewards, type RewardSample } from "../../bot/train/episode";
 import {
   computeAdvantages,
   GradientAccumulator,
@@ -30,10 +34,18 @@ function fakeDecision(
   chosen: number,
 ): DecisionRecord {
   const size = model === "attack" ? 33 : 27;
+  // `attack` is a listwise head: one input per candidate. `ratio` scores a
+  // single input and has six output units.
+  const inputs =
+    model === "attack"
+      ? [0.1, -0.2, 0.3, 0.4, 0.5, 0.6].map((v) =>
+          new Array<number>(size).fill(v),
+        )
+      : [new Array<number>(size).fill(0.1)];
   return {
     model,
     tick: 0,
-    input: new Array<number>(size).fill(0.1),
+    inputs,
     mask: [true, true, true, true, true, true],
     chosen,
     probs: [1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6],
@@ -82,6 +94,73 @@ describe("GradientAccumulator", () => {
     }
   });
 
+  test("listwise decisions backpropagate through every candidate", () => {
+    const weights = createWeights(2);
+    const model = "attack" as const;
+    const mask = [true, true, true];
+    const inputs = [0.1, -0.2, 0.3].map((v) =>
+      new Array<number>(MODEL_INPUT_DIM.attack).fill(v),
+    );
+    const logits = () =>
+      inputs.map((x) => {
+        const activations = mlpForward(weights[model], x).activations;
+        return activations[activations.length - 1][0];
+      });
+    const probs = maskedSoftmax(logits(), mask);
+    // A candidate other than the first: the old bounds check dropped these.
+    const chosen = 1;
+    const advantage = 0.7;
+
+    // Numerical gradient of -advantage * log pi(chosen), around the current
+    // weights, where every candidate's logit depends on the same parameters.
+    const before = cloneParams(weights[model]);
+    const loss = () =>
+      -advantage * Math.log(maskedSoftmax(logits(), mask)[chosen]);
+    const numerical: number[][][] = before.weights.map((layer, l) =>
+      layer.map((row, o) => row.map((_, i) => 0)),
+    );
+    const epsilon = 1e-6;
+    for (let l = 0; l < before.weights.length; l++) {
+      for (let o = 0; o < before.weights[l].length; o++) {
+        for (let i = 0; i < before.weights[l][o].length; i++) {
+          const original = before.weights[l][o][i];
+          weights[model].weights[l][o][i] = original + epsilon;
+          const plus = loss();
+          weights[model].weights[l][o][i] = original - epsilon;
+          const minus = loss();
+          weights[model].weights[l][o][i] = original;
+          numerical[l][o][i] = (plus - minus) / (2 * epsilon);
+        }
+      }
+    }
+
+    const options = {
+      learningRate: 1,
+      gamma: 0.99,
+      entropy: 0,
+      gradClip: 1e9,
+    };
+    const accumulator = new GradientAccumulator();
+    accumulator.add(
+      { record: { model, tick: 0, inputs, mask, chosen, probs }, advantage },
+      weights,
+      options,
+    );
+    expect(accumulator.counts()).toEqual({ attack: 1 });
+    accumulator.apply(weights, options);
+
+    for (let l = 0; l < before.weights.length; l++) {
+      for (let o = 0; o < before.weights[l].length; o++) {
+        for (let i = 0; i < before.weights[l][o].length; i++) {
+          // `apply` moved each weight by -lr * gradient.
+          const gradient =
+            before.weights[l][o][i] - weights[model].weights[l][o][i];
+          expect(gradient).toBeCloseTo(numerical[l][o][i], 5);
+        }
+      }
+    }
+  });
+
   test("ignores a decision whose chosen index is out of range", () => {
     const weights = createWeights(2);
     const accumulator = new GradientAccumulator();
@@ -91,6 +170,52 @@ describe("GradientAccumulator", () => {
       REINFORCE_V1,
     );
     expect(accumulator.counts()).toEqual({});
+  });
+});
+
+describe("EpisodeRewards", () => {
+  const decision = (tick: number): DecisionRecord => ({
+    model: "ratio",
+    tick,
+    inputs: [new Array<number>(MODEL_INPUT_DIM.ratio).fill(0)],
+    mask: [true, true, true, true, true, true],
+    chosen: 0,
+    probs: [1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6],
+  });
+  const sample = (tiles: number): RewardSample => ({
+    goldEarned: 0,
+    tiles,
+    troops: 10_000,
+    maxTroops: 50_000,
+  });
+  const tiles100 = 100 / REWARD_V1.tileScale;
+
+  test("credits an interval to the decision it followed", () => {
+    const rewards = new EpisodeRewards(REWARD_V1);
+    rewards.observe(sample(1_000), [decision(0)]);
+    rewards.observe(sample(1_100), [decision(10)]);
+
+    // The state read at tick 10 covers the ticks after the decision at tick 0,
+    // so its delta belongs to the record at tick 0 — not to the one at 10.
+    expect(rewards.steps).toHaveLength(1);
+    expect(rewards.steps[0].record.tick).toBe(0);
+    expect(rewards.steps[0].reward).toBeCloseTo(tiles100, 10);
+
+    rewards.finish(sample(1_200), 2);
+    expect(rewards.steps).toHaveLength(2);
+    expect(rewards.steps[1].record.tick).toBe(10);
+    expect(rewards.steps[1].reward).toBeCloseTo(tiles100 + 2, 10);
+  });
+
+  test("keeps the terminal term when the last interval has no decision", () => {
+    const rewards = new EpisodeRewards(REWARD_V1);
+    rewards.observe(sample(1_000), [decision(0)]);
+    rewards.observe(sample(1_100), []);
+    rewards.finish(sample(1_200), 2);
+    // The unclaimed interval is still dropped, but the terminal is not lost.
+    expect(rewards.steps).toHaveLength(1);
+    expect(rewards.steps[0].record.tick).toBe(0);
+    expect(rewards.steps[0].reward).toBeCloseTo(tiles100 + 2, 10);
   });
 });
 

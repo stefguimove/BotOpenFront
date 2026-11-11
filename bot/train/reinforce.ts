@@ -3,10 +3,12 @@ import {
   mlpBackward,
   mlpForward,
   sgdStep,
+  type MlpGrads,
   type MlpParams,
 } from "../models/mlp";
 import { entropyGradient, policyGradient } from "../models/policy";
 import {
+  LISTWISE_MODELS,
   MODEL_INPUT_DIM,
   MODEL_NAMES,
   MODEL_OUTPUT_DIM,
@@ -68,12 +70,15 @@ export function computeAdvantages(
   }));
 }
 
+interface ModelAccumulator {
+  weights: number[][][];
+  biases: number[][];
+  count: number;
+}
+
 /** Accumulates per-model gradients over a batch of returns. */
 export class GradientAccumulator {
-  private readonly sums = new Map<
-    ModelName,
-    { weights: number[][][]; biases: number[][]; count: number }
-  >();
+  private readonly sums = new Map<ModelName, ModelAccumulator>();
 
   add(
     step: ReturnStep,
@@ -82,20 +87,46 @@ export class GradientAccumulator {
   ): void {
     const { record } = step;
     const params = weights[record.model];
-    if (record.chosen < 0 || record.chosen >= MODEL_OUTPUT_DIM[record.model]) {
-      return;
-    }
-    const cache = mlpForward(params, record.input);
+    const listwise = LISTWISE_MODELS.has(record.model);
+    // A listwise head's `chosen` indexes the candidate list; a categorical
+    // head's indexes its output units.
+    const count = listwise
+      ? Math.min(record.inputs.length, record.probs.length)
+      : MODEL_OUTPUT_DIM[record.model];
+    if (record.chosen < 0 || record.chosen >= count) return;
+    if (!listwise && record.inputs.length === 0) return;
+
     const dOutput = policyGradient(record.probs, record.chosen, step.advantage);
     const entropy = entropyGradient(record.probs, options.entropy);
     for (let i = 0; i < dOutput.length; i++) dOutput[i] += entropy[i];
 
-    const grads = mlpBackward(params, cache, dOutput);
     const acc = this.slot(record.model, params);
     acc.count += 1;
-    for (let l = 0; l < params.weights.length; l++) {
-      for (let o = 0; o < params.weights[l].length; o++) {
-        for (let i = 0; i < params.weights[l][o].length; i++) {
+    if (listwise) {
+      // One forward per candidate: `dOutput[i]` is the gradient of logit i, so
+      // it only flows through candidate i's input.
+      for (let i = 0; i < count; i++) {
+        // Masked candidates score 0 and have no gradient; skip the forward.
+        if (dOutput[i] === 0) continue;
+        this.accumulate(
+          acc,
+          mlpBackward(params, mlpForward(params, record.inputs[i]), [
+            dOutput[i],
+          ]),
+        );
+      }
+    } else {
+      this.accumulate(
+        acc,
+        mlpBackward(params, mlpForward(params, record.inputs[0]), dOutput),
+      );
+    }
+  }
+
+  private accumulate(acc: ModelAccumulator, grads: MlpGrads): void {
+    for (let l = 0; l < acc.weights.length; l++) {
+      for (let o = 0; o < acc.weights[l].length; o++) {
+        for (let i = 0; i < acc.weights[l][o].length; i++) {
           acc.weights[l][o][i] += grads.weights[l][o][i];
         }
         acc.biases[l][o] += grads.biases[l][o];
@@ -103,7 +134,7 @@ export class GradientAccumulator {
     }
   }
 
-  private slot(model: ModelName, params: MlpParams) {
+  private slot(model: ModelName, params: MlpParams): ModelAccumulator {
     let existing = this.sums.get(model);
     if (existing === undefined) {
       existing = {

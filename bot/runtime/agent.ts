@@ -48,7 +48,13 @@ import type { Agent } from "./types";
 export interface DecisionRecord {
   model: ModelName;
   tick: number;
-  input: number[];
+  /**
+   * One input per candidate that was scored, in sampling order, so a listwise
+   * model can be backpropagated through every candidate. The categorical
+   * heads (`ratio`, `diplomacyAction`) score a single input and have exactly
+   * one entry.
+   */
+  inputs: number[][];
   mask: boolean[];
   chosen: number;
   probs: number[];
@@ -213,7 +219,7 @@ export class BotAgent implements Agent {
 
   private sample(
     model: ModelName,
-    input: number[],
+    inputs: number[][],
     logits: number[],
     mask: boolean[],
     tick: number,
@@ -224,7 +230,7 @@ export class BotAgent implements Agent {
         ? sampleIndex(probs, this.rng)
         : argmaxMasked(logits, mask);
     if (chosen < 0) return -1;
-    this.lastDecisions.push({ model, tick, input, mask, chosen, probs });
+    this.lastDecisions.push({ model, tick, inputs, mask, chosen, probs });
     return chosen;
   }
 
@@ -238,17 +244,8 @@ export class BotAgent implements Agent {
     const inputs = targets.map((t) => concatInputs(obs.self, t.features));
     const logits = this.scoreCandidates("attack", inputs);
     const targetMask = targets.map(() => true);
-    const targetIndex = this.sample(
-      "attack",
-      inputs[0],
-      logits,
-      targetMask,
-      tick,
-    );
-    // Record the selected candidate's own input, not the first one.
+    const targetIndex = this.sample("attack", inputs, logits, targetMask, tick);
     if (targetIndex < 0) return null;
-    this.lastDecisions[this.lastDecisions.length - 1].input =
-      inputs[targetIndex];
 
     const ratioLogits = mlpForward(this.weights.ratio, obs.self);
     const ratioScores =
@@ -256,7 +253,7 @@ export class BotAgent implements Agent {
     const rMask = ratioMask(obs);
     const ratioIndex = this.sample(
       "ratio",
-      obs.self,
+      [obs.self],
       [...ratioScores],
       rMask,
       tick,
@@ -301,9 +298,8 @@ export class BotAgent implements Agent {
     );
     const logits = this.scoreCandidates("build", inputs);
     const mask = feasible.map(() => true);
-    const chosen = this.sample("build", inputs[0], logits, mask, obs.tick);
+    const chosen = this.sample("build", inputs, logits, mask, obs.tick);
     if (chosen < 0) return null;
-    this.lastDecisions[this.lastDecisions.length - 1].input = inputs[chosen];
 
     const unit = feasible[chosen].option.unitType;
     return buildUnitIntent(this.clientID, unit, tiles[chosen]);
@@ -329,9 +325,8 @@ export class BotAgent implements Agent {
     const inputs = candidates.map((s) => concatInputs(obs.self, s.features));
     const logits = this.scoreCandidates("upgrade", inputs);
     const mask = candidates.map(() => true);
-    const chosen = this.sample("upgrade", inputs[0], logits, mask, obs.tick);
+    const chosen = this.sample("upgrade", inputs, logits, mask, obs.tick);
     if (chosen < 0) return null;
-    this.lastDecisions[this.lastDecisions.length - 1].input = inputs[chosen];
 
     const structure = candidates[chosen];
     return upgradeStructureIntent(
@@ -357,7 +352,7 @@ export class BotAgent implements Agent {
       actionCache.activations[actionCache.activations.length - 1];
     const actionIndex = this.sample(
       "diplomacyAction",
-      obs.self,
+      [obs.self],
       [...actionLogits],
       actionMask,
       obs.tick,
@@ -385,13 +380,12 @@ export class BotAgent implements Agent {
     const logits = this.scoreCandidates("diplomacyTarget", inputs);
     const chosen = this.sample(
       "diplomacyTarget",
-      inputs[0],
+      inputs,
       logits,
       candidateIndexes.map(() => true),
       obs.tick,
     );
     if (chosen < 0) return null;
-    this.lastDecisions[this.lastDecisions.length - 1].input = inputs[chosen];
 
     const playerID = obs.opponents[candidateIndexes[chosen].index].playerID;
     switch (action) {

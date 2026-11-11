@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { compactConfig } from "../../bot/config/target";
 import { ScriptedAgent } from "../../bot/eval/baselines";
-import { createWeights, totalParams } from "../../bot/models/weights";
+import {
+  createWeights,
+  LISTWISE_MODELS,
+  totalParams,
+} from "../../bot/models/weights";
 import { BotAgent } from "../../bot/runtime/agent";
 import { createBotGame } from "../../bot/runtime/gameEnv";
 import { playEpisode } from "../../bot/runtime/loop";
@@ -80,7 +84,16 @@ describe("BotAgent", () => {
     expect(result.decisions.length).toBeGreaterThan(0);
     // Every sampled decision must reference a model the trainer knows.
     for (const decision of result.decisions) {
-      expect(decision.input.length).toBeGreaterThan(0);
+      // Scoring heads keep one input per candidate, so the trainer can
+      // backpropagate the listwise gradient through every one of them;
+      // categorical heads score a single input.
+      if (LISTWISE_MODELS.has(decision.model)) {
+        expect(decision.inputs.length).toBe(decision.probs.length);
+      } else {
+        expect(decision.inputs).toHaveLength(1);
+      }
+      for (const input of decision.inputs)
+        expect(input.length).toBeGreaterThan(0);
       expect(decision.chosen).toBeGreaterThanOrEqual(0);
       expect(decision.chosen).toBeLessThan(decision.mask.length);
       expect(decision.mask[decision.chosen]).toBe(true);

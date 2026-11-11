@@ -1709,3 +1709,16 @@ part de tuiles reste sous 0,01, la cause est toujours le ratio d'attaque
 
 Les pistes non retenues restent P3 (ratio plafonné à 0,5 hors défense), P4 (pas
 de ré-attaque d'une cible déjà attaquée) et P7 (biais initial vers 0,2).
+
+### 21.9 Inputs v2 (séparation des entrées par modèle)
+
+Les entrées v1 sont communes : les 27 dims `self` sont données à chacun des six
+modèles, alors que les poids sont déjà séparés. Un plan de refonte est écrit
+dans [`BOT_INPUTS_V2.md`](BOT_INPUTS_V2.md) : noyau partagé de 10 dims, blocs
+propres à chaque modèle, fusion de `ratio` dans le modèle d'attaque (action
+jointe `cible × ratio`), checkpoints `version: 2`.
+
+Décisions actées : séparation graduée (noyau + spécifique), features **combat**,
+**économie** et **risque diplomatique**, format de checkpoint cassé, action
+jointe, implémentation **avant** le prochain entraînement. Budget visé :
+5 modèles, 3 310 paramètres (−33 %), entrées 23/22/17/16/24.
