@@ -41,17 +41,17 @@ lancer plusieurs parties en parallèle sans limite de débit.
 
 ## 1. Périmètre et contraintes
 
-| Élément | Choix v1 |
-| --- | --- |
-| Mode de jeu | **local headless**, sans serveur ni réseau |
-| Carte d'évaluation | TheBox 2048×2048, **1 bot vs 10 tribus + 2 nations, Easy** |
-| Carte d'entraînement | TheBox compacte (1024²) avec la même composition ; 512² seulement via un loader custom |
-| Actions | `attack`, `cancel_attack`, `build_unit`, `upgrade_structure`, `allianceRequest`, `allianceReject`, `allianceExtension`, `breakAlliance` |
-| Spawn | aléatoire, jamais décidé par l'IA |
-| Modèles | 4 × MLP 16 spécialisés + méta-contrôleur |
-| Observation par joueur | distance, or, max troupes, troupes, attaquable, alliance |
-| Entraînement | self-play local, RL par lots |
-| Pas d'imitation | aucune base de parties requise |
+| Élément                | Choix v1                                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Mode de jeu            | **local headless**, sans serveur ni réseau                                                                                              |
+| Carte d'évaluation     | TheBox 2048×2048, **1 bot vs 10 tribus + 2 nations, Easy**                                                                              |
+| Carte d'entraînement   | TheBox compacte (1024²) avec la même composition ; 512² seulement via un loader custom                                                  |
+| Actions                | `attack`, `cancel_attack`, `build_unit`, `upgrade_structure`, `allianceRequest`, `allianceReject`, `allianceExtension`, `breakAlliance` |
+| Spawn                  | aléatoire, jamais décidé par l'IA                                                                                                       |
+| Modèles                | 4 × MLP 16 spécialisés + méta-contrôleur                                                                                                |
+| Observation par joueur | distance, or, max troupes, troupes, attaquable, alliance                                                                                |
+| Entraînement           | self-play local, RL par lots                                                                                                            |
+| Pas d'imitation        | aucune base de parties requise                                                                                                          |
 
 Contraintes de comportement déjà actées :
 
@@ -63,24 +63,24 @@ Contraintes de comportement déjà actées :
 
 Partie locale, une seule partie à la fois pendant l'évaluation :
 
-| Champ `GameStartInfo.config` | Valeur |
-| --- | --- |
-| `gameType` | `Singleplayer` |
-| `gameMode` | `FFA` |
-| `gameMap` | `TheBox` |
-| `gameMapSize` | `Normal` (2048²) |
-| `difficulty` | `Easy` |
-| `bots` | **10** (tribus, `PlayerType.Bot`) |
-| `nations` | **2** (nations tirées parmi les 13 du manifeste) |
-| `randomSpawn` | `true` |
-| `donateGold` / `donateTroops` | `false` (FFA) |
-| `infiniteGold` / `infiniteTroops` | `false` |
-| `instantBuild` | `false` |
-| `disabledUnits` | `[]` |
-| `disableAlliances` | `false` |
-| `playerTeams` | `undefined` (FFA) |
-| `spawnImmunityDuration` | `null` (défaut) |
-| `players` | **1 seul `Human`** : le bot |
+| Champ `GameStartInfo.config`      | Valeur                                           |
+| --------------------------------- | ------------------------------------------------ |
+| `gameType`                        | `Singleplayer`                                   |
+| `gameMode`                        | `FFA`                                            |
+| `gameMap`                         | `TheBox`                                         |
+| `gameMapSize`                     | `Normal` (2048²)                                 |
+| `difficulty`                      | `Easy`                                           |
+| `bots`                            | **10** (tribus, `PlayerType.Bot`)                |
+| `nations`                         | **2** (nations tirées parmi les 13 du manifeste) |
+| `randomSpawn`                     | `true`                                           |
+| `donateGold` / `donateTroops`     | `false` (FFA)                                    |
+| `infiniteGold` / `infiniteTroops` | `false`                                          |
+| `instantBuild`                    | `false`                                          |
+| `disabledUnits`                   | `[]`                                             |
+| `disableAlliances`                | `false`                                          |
+| `playerTeams`                     | `undefined` (FFA)                                |
+| `spawnImmunityDuration`           | `null` (défaut)                                  |
+| `players`                         | **1 seul `Human`** : le bot                      |
 
 Implications :
 
@@ -156,32 +156,32 @@ Conséquences du mode local :
 
 ### 3.1 Feature `self` (~20 dims)
 
-| Feature | Normalisation |
-| --- | --- |
-| tick | `tick / 10000` |
-| phase spawn | 0/1 |
-| troupes | `log1p(troops) / 20` |
-| max troupes | `log1p(maxTroops) / 20` |
-| ratio troupes | `troops / maxTroops` |
-| or | `log1p(gold) / 20` |
-| `goldEarned` | `log1p(goldEarned) / 20` |
-| `gold/s` | EMA de `ΔgoldEarned / Δt` (revenu brut) |
-| `tiles/s` | EMA de `Δtiles / Δt` |
-| `peakTroops` | `log1p(peakTroops) / 20` (diagnostic) |
-| tuiles | `tiles / 4_194_304` |
-| part de carte | `tiles / totalLandTiles` |
-| distance au seuil de victoire | `winThreshold - share` |
-| nombre de structures | `count / 100` |
-| villes | `count / 100` |
-| silos | `count / 10` |
-| SAM | `count / 10` |
-| troupes entrantes | `incoming / max(troops, 1)` |
-| troupes sortantes | `outgoing / max(troops, 1)` |
-| nombre d'attaques entrantes | `count / 10` |
-| nombre d'alliés | `count / 10` |
-| traître | 0/1 |
-| doomsday actif | 0/1 |
-| overtime actif | 0/1 |
+| Feature                       | Normalisation                           |
+| ----------------------------- | --------------------------------------- |
+| tick                          | `tick / 10000`                          |
+| phase spawn                   | 0/1                                     |
+| troupes                       | `log1p(troops) / 20`                    |
+| max troupes                   | `log1p(maxTroops) / 20`                 |
+| ratio troupes                 | `troops / maxTroops`                    |
+| or                            | `log1p(gold) / 20`                      |
+| `goldEarned`                  | `log1p(goldEarned) / 20`                |
+| `gold/s`                      | EMA de `ΔgoldEarned / Δt` (revenu brut) |
+| `tiles/s`                     | EMA de `Δtiles / Δt`                    |
+| `peakTroops`                  | `log1p(peakTroops) / 20` (diagnostic)   |
+| tuiles                        | `tiles / 4_194_304`                     |
+| part de carte                 | `tiles / totalLandTiles`                |
+| distance au seuil de victoire | `winThreshold - share`                  |
+| nombre de structures          | `count / 100`                           |
+| villes                        | `count / 100`                           |
+| silos                         | `count / 10`                            |
+| SAM                           | `count / 10`                            |
+| troupes entrantes             | `incoming / max(troops, 1)`             |
+| troupes sortantes             | `outgoing / max(troops, 1)`             |
+| nombre d'attaques entrantes   | `count / 10`                            |
+| nombre d'alliés               | `count / 10`                            |
+| traître                       | 0/1                                     |
+| doomsday actif                | 0/1                                     |
+| overtime actif                | 0/1                                     |
 
 Les échelles sont **fixes** (pas de normalisation apprise) pour rester
 déterministe et simple.
@@ -192,14 +192,14 @@ est inférieur à 5 décisions.
 
 ### 3.2 Features par joueur/nation/tribu (6 dims)
 
-| Feature | Définition |
-| --- | --- |
-| distance | distance bot ↔ joueur, normalisée par la diagonale (≈ 2896 sur TheBox) |
-| or | `log1p(gold) / 20` |
-| max troupes | `log1p(maxTroops) / 20` |
-| troupes | `log1p(troops) / 20` |
-| attaquable | `sharesBorderWith(joueur) && canAttackPlayer(joueur)` |
-| alliance | `isAlliedWith(joueur)` |
+| Feature     | Définition                                                             |
+| ----------- | ---------------------------------------------------------------------- |
+| distance    | distance bot ↔ joueur, normalisée par la diagonale (≈ 2896 sur TheBox) |
+| or          | `log1p(gold) / 20`                                                     |
+| max troupes | `log1p(maxTroops) / 20`                                                |
+| troupes     | `log1p(troops) / 20`                                                   |
+| attaquable  | `sharesBorderWith(joueur) && canAttackPlayer(joueur)`                  |
+| alliance    | `isAlliedWith(joueur)`                                                 |
 
 TerraNullius est un **slot spécial** : `[0, 0, 0, 0, 1, 0]` + un flag
 `isTerraNullius = 1`. Il est toujours candidat si
@@ -216,12 +216,12 @@ On ne met **jamais** tous les acteurs dans le tenseur. Dans la config cible il
 n'y a que 12 adversaires ; les limites ci-dessous laissent de la marge pour
 d'autres configurations.
 
-| Candidats | Nombre max | Filtre |
-| --- | --- | --- |
-| Joueurs | 16 (12 réels + padding) | voisins frontaliers + alliés + demandes en attente + attaquants + top-5 tuiles/or/troupes |
-| Structures | 16 | possédées, actives, améliorables, triées par intérêt |
-| Types de bâtiment | 8 | autorisés, non désactivés, abordables ou silo prêt |
-| Cibles diplomatiques | 2 (nations) ; 16 max si la config change | alliés, demandes entrantes, joueurs éligibles |
+| Candidats            | Nombre max                               | Filtre                                                                                    |
+| -------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Joueurs              | 16 (12 réels + padding)                  | voisins frontaliers + alliés + demandes en attente + attaquants + top-5 tuiles/or/troupes |
+| Structures           | 16                                       | possédées, actives, améliorables, triées par intérêt                                      |
+| Types de bâtiment    | 8                                        | autorisés, non désactivés, abordables ou silo prêt                                        |
+| Cibles diplomatiques | 2 (nations) ; 16 max si la config change | alliés, demandes entrantes, joueurs éligibles                                             |
 
 Le reste est agrégé dans un vecteur « reste du monde » (nombre de joueurs,
 tuiles totales, or total, troupes totales, hostiles).
@@ -269,47 +269,47 @@ CNN, pas de Transformer.
 
 ### 4.2 Modèle attaque
 
-| Élément | Détail |
-| --- | --- |
-| Entrée | `self` + 16 joueurs encodés (12 acteurs + padding) + TerraNullius |
-| Score cible | MLP partagé `(16 + 16) → 16 → 1` par candidat |
-| Ratio | `16 → 8` (ex. 5/10/20/33/50/75/100 %) |
-| No-op | `16 → 2` ou concurrence directe avec les scores |
-| Sortie | distribution sur cibles × ratios |
-| Paramètres | ~1,7 k |
+| Élément     | Détail                                                            |
+| ----------- | ----------------------------------------------------------------- |
+| Entrée      | `self` + 16 joueurs encodés (12 acteurs + padding) + TerraNullius |
+| Score cible | MLP partagé `(16 + 16) → 16 → 1` par candidat                     |
+| Ratio       | `16 → 8` (ex. 5/10/20/33/50/75/100 %)                             |
+| No-op       | `16 → 2` ou concurrence directe avec les scores                   |
+| Sortie      | distribution sur cibles × ratios                                  |
+| Paramètres  | ~1,7 k                                                            |
 
 ### 4.3 Modèle construction
 
-| Élément | Détail |
-| --- | --- |
-| Entrée | `self` + 8 types × 4 flags + tuile choisie par heuristique |
-| Score type | MLP partagé `(20 + 16) → 16 → 1` |
-| Montant | `16 → 4` (1, 2, 5, max abordable) |
-| Sortie | type × montant, no-op |
-| Paramètres | ~1,8 k |
+| Élément    | Détail                                                     |
+| ---------- | ---------------------------------------------------------- |
+| Entrée     | `self` + 8 types × 4 flags + tuile choisie par heuristique |
+| Score type | MLP partagé `(20 + 16) → 16 → 1`                           |
+| Montant    | `16 → 4` (1, 2, 5, max abordable)                          |
+| Sortie     | type × montant, no-op                                      |
+| Paramètres | ~1,8 k                                                     |
 
 La tuile n'est **pas** choisie par le réseau : l'heuristique prend la meilleure
 tuile valide autour de la frontière ou via `playerBuildables`.
 
 ### 4.4 Modèle upgrade
 
-| Élément | Détail |
-| --- | --- |
-| Entrée | `self` + 16 structures × 10 features |
-| Score structure | MLP partagé `(20 + 16) → 16 → 1` |
-| Montant | `16 → 4` (1, 2, 5, max abordable) |
-| Sortie | structure × montant, no-op |
-| Paramètres | ~1,7 k |
+| Élément         | Détail                               |
+| --------------- | ------------------------------------ |
+| Entrée          | `self` + 16 structures × 10 features |
+| Score structure | MLP partagé `(20 + 16) → 16 → 1`     |
+| Montant         | `16 → 4` (1, 2, 5, max abordable)    |
+| Sortie          | structure × montant, no-op           |
+| Paramètres      | ~1,7 k                               |
 
 ### 4.5 Modèle diplomatie
 
-| Élément | Détail |
-| --- | --- |
-| Entrée | `self` + 16 joueurs × 10 features + flags de demandes |
-| Action | `16 → 5` : request/accept, reject, extend, break, no-op |
-| Cible | MLP partagé `(16 + 8 + 16) → 16 → 1` par joueur |
-| Sortie | action × cible, no-op |
-| Paramètres | ~3,4 k |
+| Élément    | Détail                                                  |
+| ---------- | ------------------------------------------------------- |
+| Entrée     | `self` + 16 joueurs × 10 features + flags de demandes   |
+| Action     | `16 → 5` : request/accept, reject, extend, break, no-op |
+| Cible      | MLP partagé `(16 + 8 + 16) → 16 → 1` par joueur         |
+| Sortie     | action × cible, no-op                                   |
+| Paramètres | ~3,4 k                                                  |
 
 Rappel : accepter une demande = renvoyer `allianceRequest` à l'émetteur.
 `PlayerType.Bot` est exclu des cibles de `allianceRequest`. Dans la config cible,
@@ -333,15 +333,15 @@ paramètres.
 
 ### 4.7 Budget total
 
-| Modèle | Paramètres |
-| --- | --- |
-| Attaque | ~1,7 k |
-| Construction | ~1,8 k |
-| Upgrade | ~1,7 k |
-| Diplomatie | ~3,4 k |
-| Encodeurs partagés | ~1,3 k |
-| Méta (règles) | 0 |
-| **Total** | **~10 k** |
+| Modèle             | Paramètres |
+| ------------------ | ---------- |
+| Attaque            | ~1,7 k     |
+| Construction       | ~1,8 k     |
+| Upgrade            | ~1,7 k     |
+| Diplomatie         | ~3,4 k     |
+| Encodeurs partagés | ~1,3 k     |
+| Méta (règles)      | 0          |
+| **Total**          | **~10 k**  |
 
 Poids exportés en **JSON** (10 k floats ≈ 40 Ko en fp32, 20 Ko en fp16) et
 inférence en TypeScript pur, sans dépendance native.
@@ -357,14 +357,14 @@ moteur exécute ensuite le tick avec `runner.executeNextTick()`.
 
 ### 5.1 Transformation sortie → intent
 
-| Modèle | Sortie | Intent |
-| --- | --- | --- |
-| Attaque | cible + ratio | `attack { targetID, troops = ratio × troops }` |
-| Attaque | annulation | `cancel_attack { attackID }` |
-| Construction | type + montant + tuile | `build_unit { unit, tile, amount }` |
-| Upgrade | `unitId` + montant | `upgrade_structure { unit, unitId, amount }` |
-| Diplomatie | action + cible | `allianceRequest` / `allianceReject` / `allianceExtension` / `breakAlliance` |
-| Aucun | no-op | aucun intent |
+| Modèle       | Sortie                 | Intent                                                                       |
+| ------------ | ---------------------- | ---------------------------------------------------------------------------- |
+| Attaque      | cible + ratio          | `attack { targetID, troops = ratio × troops }`                               |
+| Attaque      | annulation             | `cancel_attack { attackID }`                                                 |
+| Construction | type + montant + tuile | `build_unit { unit, tile, amount }`                                          |
+| Upgrade      | `unitId` + montant     | `upgrade_structure { unit, unitId, amount }`                                 |
+| Diplomatie   | action + cible         | `allianceRequest` / `allianceReject` / `allianceExtension` / `breakAlliance` |
+| Aucun        | no-op                  | aucun intent                                                                 |
 
 ### 5.2 Validation avant envoi
 
@@ -450,13 +450,13 @@ seulement au curriculum et à la diversification.
 
 ### 6.3 Curriculum
 
-| Niveau | Carte | Adversaires | Horizon | Objectif |
-| --- | --- | --- | --- | --- |
-| 0 | 1024² | 1 tribu / script | 500 ticks | apprendre à expandre et attaquer |
-| 1 | 1024² | 3 tribus | 1000 ticks | frontières, défense |
-| 2 | 1024² | 6 tribus + 1 nation, Easy | 1500 ticks | ciblage, économie |
-| 3 | 1024² | **10 tribus + 2 nations, Easy** | 2000 ticks | composition cible |
-| 4 | 2048² | **10 tribus + 2 nations, Easy** | partie complète | évaluation / fine-tune |
+| Niveau | Carte | Adversaires                     | Horizon         | Objectif                         |
+| ------ | ----- | ------------------------------- | --------------- | -------------------------------- |
+| 0      | 1024² | 1 tribu / script                | 500 ticks       | apprendre à expandre et attaquer |
+| 1      | 1024² | 3 tribus                        | 1000 ticks      | frontières, défense              |
+| 2      | 1024² | 6 tribus + 1 nation, Easy       | 1500 ticks      | ciblage, économie                |
+| 3      | 1024² | **10 tribus + 2 nations, Easy** | 2000 ticks      | composition cible                |
+| 4      | 2048² | **10 tribus + 2 nations, Easy** | partie complète | évaluation / fine-tune           |
 
 Le curriculum réduit le coût de simulation de plusieurs ordres de grandeur.
 La composition cible n'apparaît qu'aux niveaux 3 et 4 ; les niveaux 0–2 servent
@@ -466,14 +466,14 @@ La composition cible n'apparaît qu'aux niveaux 3 et 4 ; les niveaux 0–2 serve
 
 #### 6.4.1 Décisions actées
 
-| Point | Choix retenu |
-| --- | --- |
-| Sémantique des taux | **potential-based** |
-| Métrique d'or | **`goldEarned`** (revenu brut cumulé, insensible aux dépenses) |
-| Stagnation | **petite pénalité explicite** |
-| Pertes de tuiles | **symétriques** |
-| Terminal 3 min | **part de tuiles + `maxTroops`** |
-| « max troupe » | **`maxTroops`** (plafond territoire + villes) |
+| Point               | Choix retenu                                                   |
+| ------------------- | -------------------------------------------------------------- |
+| Sémantique des taux | **potential-based**                                            |
+| Métrique d'or       | **`goldEarned`** (revenu brut cumulé, insensible aux dépenses) |
+| Stagnation          | **petite pénalité explicite**                                  |
+| Pertes de tuiles    | **symétriques**                                                |
+| Terminal 3 min      | **part de tuiles + `maxTroops`**                               |
+| « max troupe »      | **`maxTroops`** (plafond territoire + villes)                  |
 
 #### 6.4.2 Signaux
 
@@ -510,18 +510,18 @@ r_terminal = w_end_tiles · tileShare_T
 
 Paramètres initiaux à ajuster :
 
-| Paramètre | Valeur | Rôle |
-| --- | --- | --- |
-| `w_g` | 1,0 | potentiel de revenu |
-| `w_t` | 1,0 | delta de tuiles |
-| `tileScale` | 1 000 | normalisation des tuiles |
-| `c_stag` | 0,001 | pénalité par décision de stagnation |
-| `K` | 5 | décisions consécutives avant stagnation |
-| `w_end_tiles` | 1,0 | part de tuiles en fin d'épisode |
-| `w_end_max` | 0,5 | `maxTroops` en fin d'épisode |
-| `maxRef` | 100 000 | normalisation de `maxTroops` |
-| `w_win` | 1,0 (0 en 3 min) | bonus de victoire (parties longues) |
-| `γ` | 0,99 | discount par décision (1 s) |
+| Paramètre     | Valeur           | Rôle                                    |
+| ------------- | ---------------- | --------------------------------------- |
+| `w_g`         | 1,0              | potentiel de revenu                     |
+| `w_t`         | 1,0              | delta de tuiles                         |
+| `tileScale`   | 1 000            | normalisation des tuiles                |
+| `c_stag`      | 0,001            | pénalité par décision de stagnation     |
+| `K`           | 5                | décisions consécutives avant stagnation |
+| `w_end_tiles` | 1,0              | part de tuiles en fin d'épisode         |
+| `w_end_max`   | 0,5              | `maxTroops` en fin d'épisode            |
+| `maxRef`      | 100 000          | normalisation de `maxTroops`            |
+| `w_win`       | 1,0 (0 en 3 min) | bonus de victoire (parties longues)     |
+| `γ`           | 0,99             | discount par décision (1 s)             |
 
 Normalisation et sécurité :
 
@@ -638,21 +638,21 @@ paralléliser, mais nécessite beaucoup de rollouts ; à garder en secours.
 
 ## 7. Budget de calcul réaliste
 
-| Élément | Ordre de grandeur |
-| --- | --- |
-| Mode | local headless, sans serveur ni réseau |
-| Paramètres | ~10 k |
-| Forward par décision | < 0,1 ms CPU |
-| Mise à jour PPO | négligeable |
-| Décisions par épisode (1800 ticks / 10) | 180 |
-| Rollout 8 envs × 180 décisions | 1 440 transitions |
-| Épisodes par itération (8 workers × 2) | 16 |
-| Transitions par itération | ~2 880 |
-| Itérations PPO | 500–2 000 |
-| Transitions totales | 1,4–5,8 M |
-| Ticks simulés | 14–58 M |
-| Wall-clock compact 1024², 8 cœurs | **quelques heures** |
-| Wall-clock TheBox 2048², 12 adversaires | **quelques heures à ~1 jour** |
+| Élément                                 | Ordre de grandeur                      |
+| --------------------------------------- | -------------------------------------- |
+| Mode                                    | local headless, sans serveur ni réseau |
+| Paramètres                              | ~10 k                                  |
+| Forward par décision                    | < 0,1 ms CPU                           |
+| Mise à jour PPO                         | négligeable                            |
+| Décisions par épisode (1800 ticks / 10) | 180                                    |
+| Rollout 8 envs × 180 décisions          | 1 440 transitions                      |
+| Épisodes par itération (8 workers × 2)  | 16                                     |
+| Transitions par itération               | ~2 880                                 |
+| Itérations PPO                          | 500–2 000                              |
+| Transitions totales                     | 1,4–5,8 M                              |
+| Ticks simulés                           | 14–58 M                                |
+| Wall-clock compact 1024², 8 cœurs       | **quelques heures**                    |
+| Wall-clock TheBox 2048², 12 adversaires | **quelques heures à ~1 jour**          |
 
 **Le simulateur est le coût dominant.** Avant tout entraînement, mesurer le
 débit réel de `executeNextTick()` sur 1024² et 2048² (et 512² si un loader
@@ -670,13 +670,13 @@ cible, pas quelques minutes. C'est le prix du self-play.
 
 ## 8. Évaluation
 
-| Baseline | Rôle |
-| --- | --- |
-| Politique aléatoire | sanity check |
+| Baseline                                          | Rôle              |
+| ------------------------------------------------- | ----------------- |
+| Politique aléatoire                               | sanity check      |
 | Politique scriptée « expand then attack weakest » | baseline minimale |
-| IA nations du moteur | baseline crédible |
-| Checkpoints précédents | progression |
-| Ancien bot réglé | référence |
+| IA nations du moteur                              | baseline crédible |
+| Checkpoints précédents                            | progression       |
+| Ancien bot réglé                                  | référence         |
 
 Métriques principales (épisode de **3 min = 1800 ticks**, sans victoire) :
 
@@ -695,6 +695,7 @@ Métriques principales (épisode de **3 min = 1800 ticks**, sans victoire) :
 `peakTroops` et `troops` à côté pour détecter le « city spam » sans armée.
 
 Évaluer séparément chaque modèle :
+
 - attaque : cible choisie vs meilleure cible heuristique ;
 - diplomatie : alliances utiles, trahisons évitées ;
 - construction/upgrade : revenu, valeur des structures.
@@ -710,19 +711,19 @@ qu'à l'entraînement et au diagnostic.
 Les points ci-dessous ont été vérifiés dans le code source avant d'ajouter les
 étapes de lancement.
 
-| Point | Vérification |
-| --- | --- |
-| Partie locale headless | `createGameRunner`, `runner.addTurn`, `runner.executeNextTick` et `runner.game` sont publics et utilisables dans Node |
-| Boucle de tick | `executeNextTick()` retourne un booléen et exécute un `Turn` déjà ajouté |
-| Configuration cible | `GameConfigSchema` accepte `gameType: Singleplayer`, `bots: 10`, `nations: 2`, `difficulty: Easy`, `randomSpawn: true` |
-| 2 nations | `nationPickForGame` utilise `nations: 2` et `createRandomNations` tire 2 nations du manifeste |
-| Spawn | `GameRunner.init()` ajoute `spawnPlayers()` si `randomSpawn` ; en singleplayer, `SpawnExecution` termine la phase de spawn |
-| 10 tribus | `TribeSpawner` crée `config.bots` joueurs `PlayerType.Bot` |
-| Carte TheBox | `resources/maps/thebox/*.bin` + manifeste ; `NodeGameMapLoader` charge les fichiers depuis le disque |
-| Replay | `createPartialGameRecord` + `GameRecordSchema` produisent un record `v0.0.2` |
-| Hashes | `HashUpdate` arrive dans le callback via `GameUpdateType.Hash` ; il faut l'attacher au `Turn` |
-| Viewer local | `npm run replay:api` sert `records/` sur `:8787` ; le viewer lit `#replay-viewer=<gameID>` |
-| Build du replay | `gitCommit` doit être `"DEV"` ou un SHA de 40 caractères ; en dev, utiliser `"DEV"` |
+| Point                  | Vérification                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Partie locale headless | `createGameRunner`, `runner.addTurn`, `runner.executeNextTick` et `runner.game` sont publics et utilisables dans Node      |
+| Boucle de tick         | `executeNextTick()` retourne un booléen et exécute un `Turn` déjà ajouté                                                   |
+| Configuration cible    | `GameConfigSchema` accepte `gameType: Singleplayer`, `bots: 10`, `nations: 2`, `difficulty: Easy`, `randomSpawn: true`     |
+| 2 nations              | `nationPickForGame` utilise `nations: 2` et `createRandomNations` tire 2 nations du manifeste                              |
+| Spawn                  | `GameRunner.init()` ajoute `spawnPlayers()` si `randomSpawn` ; en singleplayer, `SpawnExecution` termine la phase de spawn |
+| 10 tribus              | `TribeSpawner` crée `config.bots` joueurs `PlayerType.Bot`                                                                 |
+| Carte TheBox           | `resources/maps/thebox/*.bin` + manifeste ; `NodeGameMapLoader` charge les fichiers depuis le disque                       |
+| Replay                 | `createPartialGameRecord` + `GameRecordSchema` produisent un record `v0.0.2`                                               |
+| Hashes                 | `HashUpdate` arrive dans le callback via `GameUpdateType.Hash` ; il faut l'attacher au `Turn`                              |
+| Viewer local           | `npm run replay:api` sert `records/` sur `:8787` ; le viewer lit `#replay-viewer=<gameID>`                                 |
+| Build du replay        | `gitCommit` doit être `"DEV"` ou un SHA de 40 caractères ; en dev, utiliser `"DEV"`                                        |
 
 Points d'attention confirmés :
 
@@ -815,30 +816,30 @@ Aucune modification du moteur : tout passe par `createGameRunner`,
 
 ## 11. Jalons
 
-| Jalon | Contenu | Critère de sortie |
-| --- | --- | --- |
-| **M0** | Benchmark simulateur + harness 1v1 headless | débit ticks/s mesuré, partie 1v1 reproductible |
-| **M1** | Input layer + masques + modèle attaque MLP 16 | attaque légale, expansion sur carte compacte 1024² |
-| **M2** | Self-play attaque vs scripts, PPO/REINFORCE | bat la politique aléatoire et le script simple |
-| **M3** | Diplomatie MLP 16 | alliances acceptées/refusées de façon cohérente |
-| **M4** | Construction + upgrade MLP 16 | économie stable, pas de faillite |
-| **M5** | Passer à la config cible : 10 tribus + 2 nations, Easy, 1024² puis 2048² | survie et progression sur TheBox normal |
-| **M6** | Évaluation multi-seeds sur la config cible + robustesse | 0 intent illégal, métriques stables |
+| Jalon  | Contenu                                                                  | Critère de sortie                                  |
+| ------ | ------------------------------------------------------------------------ | -------------------------------------------------- |
+| **M0** | Benchmark simulateur + harness 1v1 headless                              | débit ticks/s mesuré, partie 1v1 reproductible     |
+| **M1** | Input layer + masques + modèle attaque MLP 16                            | attaque légale, expansion sur carte compacte 1024² |
+| **M2** | Self-play attaque vs scripts, PPO/REINFORCE                              | bat la politique aléatoire et le script simple     |
+| **M3** | Diplomatie MLP 16                                                        | alliances acceptées/refusées de façon cohérente    |
+| **M4** | Construction + upgrade MLP 16                                            | économie stable, pas de faillite                   |
+| **M5** | Passer à la config cible : 10 tribus + 2 nations, Easy, 1024² puis 2048² | survie et progression sur TheBox normal            |
+| **M6** | Évaluation multi-seeds sur la config cible + robustesse                  | 0 intent illégal, métriques stables                |
 
 ---
 
 ## 12. Risques et mitigations
 
-| Risque | Mitigation |
-| --- | --- |
-| RL trop lent sur machine faible | curriculum, épisodes courts, décision toutes les 10 ticks, rollouts parallèles |
-| Reward hacking | shaping potential-based, termes plafonnés, évaluation humaine |
-| Non-stationnarité du self-play | pool d'adversaires figés, mises à jour périodiques |
-| Modèles spécialisés sous-entraînés | rollouts partagés, entraînement séquentiel, récompenses auxiliaires |
-| 6 features trop pauvres | ajouter longueur de frontière + troupes entrantes (+<1 k paramètres) |
-| Masque buggé | revérification moteur avant envoi, logs, tests unitaires |
-| Désync / déterminisme | parties locales reproductibles : pas d'aléatoire non seedé, pas de `Math.random`, snapshots pour rejouer |
-| Suroptimisation contre un adversaire | league, adversaires variés, évaluation contre nations |
+| Risque                               | Mitigation                                                                                               |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| RL trop lent sur machine faible      | curriculum, épisodes courts, décision toutes les 10 ticks, rollouts parallèles                           |
+| Reward hacking                       | shaping potential-based, termes plafonnés, évaluation humaine                                            |
+| Non-stationnarité du self-play       | pool d'adversaires figés, mises à jour périodiques                                                       |
+| Modèles spécialisés sous-entraînés   | rollouts partagés, entraînement séquentiel, récompenses auxiliaires                                      |
+| 6 features trop pauvres              | ajouter longueur de frontière + troupes entrantes (+<1 k paramètres)                                     |
+| Masque buggé                         | revérification moteur avant envoi, logs, tests unitaires                                                 |
+| Désync / déterminisme                | parties locales reproductibles : pas d'aléatoire non seedé, pas de `Math.random`, snapshots pour rejouer |
+| Suroptimisation contre un adversaire | league, adversaires variés, évaluation contre nations                                                    |
 
 ---
 
@@ -872,17 +873,17 @@ npm run bot:play -- \
 
 ### 14.2 Flags
 
-| Flag | Défaut | Rôle |
-| --- | --- | --- |
-| `--config` | `target` | `target`, `compact`, `1v1`, `curriculum:N` |
-| `--weights` | dernier checkpoint | Dossier ou fichier JSON des 4 MLP |
-| `--seed` | aléatoire | Seed du `gameID` / PRNG |
-| `--game-id` | généré | ID utilisé pour le record et le replay |
-| `--ticks` | `0` | `0` = jusqu'à la fin de partie |
-| `--decision-interval` | `10` | Décision toutes les N ticks |
-| `--save-replay` | `false` | Écrit `records/<gameID>.json` |
-| `--replay-dir` | `records` | Dossier de sortie |
-| `--quiet` | `false` | Réduit les logs |
+| Flag                  | Défaut             | Rôle                                       |
+| --------------------- | ------------------ | ------------------------------------------ |
+| `--config`            | `target`           | `target`, `compact`, `1v1`, `curriculum:N` |
+| `--weights`           | dernier checkpoint | Dossier ou fichier JSON des 4 MLP          |
+| `--seed`              | aléatoire          | Seed du `gameID` / PRNG                    |
+| `--game-id`           | généré             | ID utilisé pour le record et le replay     |
+| `--ticks`             | `0`                | `0` = jusqu'à la fin de partie             |
+| `--decision-interval` | `10`               | Décision toutes les N ticks                |
+| `--save-replay`       | `false`            | Écrit `records/<gameID>.json`              |
+| `--replay-dir`        | `records`          | Dossier de sortie                          |
+| `--quiet`             | `false`            | Réduit les logs                            |
 
 Pour la v1 « 3 minutes », utiliser `--ticks 1800`.
 
@@ -996,24 +997,24 @@ npm run bot:train -- \
 
 ### 15.3 Flags
 
-| Flag | Défaut | Rôle |
-| --- | --- | --- |
-| `--algo` | `ppo` | `ppo` ou `reinforce` |
-| `--curriculum` | `0` | Niveau 0–4 (voir §6.3) |
-| `--workers` | `4` | Nombre de `GameRunner` parallèles |
-| `--iterations` | `500` | Itérations d'entraînement |
-| `--episodes-per-worker` | `2` | Épisodes par worker et par itération |
-| `--episode-ticks` | `1800` | Horizon d'un épisode (3 min) |
-| `--reward-profile` | `v1` | Jeu de poids de récompense |
-| `--decision-interval` | `10` | Décision toutes les N ticks |
-| `--checkpoint-dir` | `bot/checkpoints` | Sauvegarde des poids |
-| `--save-every` | `50` | Checkpoint tous les N itérations |
-| `--resume` | — | Reprendre depuis un checkpoint |
-| `--eval-every` | `100` | Évaluation périodique |
-| `--eval-games` | `3` | Parties d'évaluation par point de contrôle |
-| `--save-replay-best` | `false` | Replay de la meilleure évaluation |
-| `--save-replay-every` | `0` | Replay toutes les N itérations (0 = jamais) |
-| `--run-dir` | `bot/runs` | Logs et métriques |
+| Flag                    | Défaut            | Rôle                                        |
+| ----------------------- | ----------------- | ------------------------------------------- |
+| `--algo`                | `ppo`             | `ppo` ou `reinforce`                        |
+| `--curriculum`          | `0`               | Niveau 0–4 (voir §6.3)                      |
+| `--workers`             | `4`               | Nombre de `GameRunner` parallèles           |
+| `--iterations`          | `500`             | Itérations d'entraînement                   |
+| `--episodes-per-worker` | `2`               | Épisodes par worker et par itération        |
+| `--episode-ticks`       | `1800`            | Horizon d'un épisode (3 min)                |
+| `--reward-profile`      | `v1`              | Jeu de poids de récompense                  |
+| `--decision-interval`   | `10`              | Décision toutes les N ticks                 |
+| `--checkpoint-dir`      | `bot/checkpoints` | Sauvegarde des poids                        |
+| `--save-every`          | `50`              | Checkpoint tous les N itérations            |
+| `--resume`              | —                 | Reprendre depuis un checkpoint              |
+| `--eval-every`          | `100`             | Évaluation périodique                       |
+| `--eval-games`          | `3`               | Parties d'évaluation par point de contrôle  |
+| `--save-replay-best`    | `false`           | Replay de la meilleure évaluation           |
+| `--save-replay-every`   | `0`               | Replay toutes les N itérations (0 = jamais) |
+| `--run-dir`             | `bot/runs`        | Logs et métriques                           |
 
 ### 15.4 Pipeline d'entraînement
 
@@ -1036,12 +1037,12 @@ npm run bot:train -- \
 
 ### 15.5 Ordre d'entraînement recommandé
 
-| Étape | Modèles entraînés | Curriculum |
-| --- | --- | --- |
-| A | attaque | 0–1 |
-| B | attaque + diplomatie | 1–2 |
-| C | attaque + diplomatie + construction + upgrade | 2–3 |
-| D | fine-tune joint | 3–4 (config cible) |
+| Étape | Modèles entraînés                             | Curriculum         |
+| ----- | --------------------------------------------- | ------------------ |
+| A     | attaque                                       | 0–1                |
+| B     | attaque + diplomatie                          | 1–2                |
+| C     | attaque + diplomatie + construction + upgrade | 2–3                |
+| D     | fine-tune joint                               | 3–4 (config cible) |
 
 Les modèles non entraînés restent figés ou pilotés par règles. Cela préserve
 l'isolation et réduit le nombre de transitions nécessaires.
@@ -1119,6 +1120,7 @@ Un record local est un `GameRecord` :
    ```
 
    `replacer` vient de `SharedUtil` et convertit les `bigint` en chaînes.
+
 7. Écrire `records/<gameID>.json`.
 
 Référence d'implémentation : [ArchiveGame.ts](tests/client/replay/util/ArchiveGame.ts)
@@ -1148,12 +1150,12 @@ http://localhost:9000/#replay-viewer=<gameID>
 
 ### 16.4 Politique de sauvegarde
 
-| Contexte | Flag | Fréquence |
-| --- | --- | --- |
-| Partie manuelle | `--save-replay` | à chaque partie |
-| Évaluation | `--save-replay` | chaque partie d'évaluation |
-| Entraînement | `--save-replay-every N` | toutes les N itérations |
-| Meilleure éval | `--save-replay-best` | à chaque nouveau meilleur |
+| Contexte        | Flag                    | Fréquence                  |
+| --------------- | ----------------------- | -------------------------- |
+| Partie manuelle | `--save-replay`         | à chaque partie            |
+| Évaluation      | `--save-replay`         | chaque partie d'évaluation |
+| Entraînement    | `--save-replay-every N` | toutes les N itérations    |
+| Meilleure éval  | `--save-replay-best`    | à chaque nouveau meilleur  |
 
 Les fichiers vont dans `records/`, déjà ignoré par Git. Pour ne pas saturer le
 disque, ne sauvegarder que les parties intéressantes en entraînement.
@@ -1187,12 +1189,12 @@ disque, ne sauvegarder que les parties intéressantes en entraînement.
 
 ### Definition of Done
 
-| Étape | Critère |
-| --- | --- |
-| Lancer une partie | partie terminée ou limite atteinte, 0 intent illégal |
-| Replay | record valide, viewer ouvert, aucun mismatch de hash |
-| Entraînement | checkpoint écrit, reprise possible, récompense en hausse |
-| Évaluation | victoire ou survie mesurable contre 10 tribus + 2 nations en Easy |
+| Étape             | Critère                                                           |
+| ----------------- | ----------------------------------------------------------------- |
+| Lancer une partie | partie terminée ou limite atteinte, 0 intent illégal              |
+| Replay            | record valide, viewer ouvert, aucun mismatch de hash              |
+| Entraînement      | checkpoint écrit, reprise possible, récompense en hausse          |
+| Évaluation        | victoire ou survie mesurable contre 10 tribus + 2 nations en Easy |
 
 ---
 
@@ -1219,27 +1221,27 @@ code.
 
 ### 18.2 Points corrigés pendant la revue
 
-| Point | Correction |
-| --- | --- |
-| `games: 10` dans la séquence de lancement | remplacé par `bots: 10` |
-| `clientID: "BOT0"` | remplacé par `BOT00001` (8–10 caractères requis) |
-| `gameID` identique à chaque épisode | générer un `gameID` unique par épisode |
-| réutilisation des `MapFiles` | `loadTerrainMap` mute les buffers/manifeste ; cloner par épisode |
-| cadence des hashes | le moteur émet `HashUpdate` tous les 10 ticks |
-| `peakTroops` supposé dans les updates | il doit être maintenu par le bot |
-| distance aux joueurs | ne pas scanner la carte ; spawnTile ou frontières en cache |
-| `maxTroops` recalculé partout | cacher par décision |
+| Point                                     | Correction                                                       |
+| ----------------------------------------- | ---------------------------------------------------------------- |
+| `games: 10` dans la séquence de lancement | remplacé par `bots: 10`                                          |
+| `clientID: "BOT0"`                        | remplacé par `BOT00001` (8–10 caractères requis)                 |
+| `gameID` identique à chaque épisode       | générer un `gameID` unique par épisode                           |
+| réutilisation des `MapFiles`              | `loadTerrainMap` mute les buffers/manifeste ; cloner par épisode |
+| cadence des hashes                        | le moteur émet `HashUpdate` tous les 10 ticks                    |
+| `peakTroops` supposé dans les updates     | il doit être maintenu par le bot                                 |
+| distance aux joueurs                      | ne pas scanner la carte ; spawnTile ou frontières en cache       |
+| `maxTroops` recalculé partout             | cacher par décision                                              |
 
 ### 18.3 Risques logiques restants
 
-| Risque | Impact | Mitigation |
-| --- | --- | --- |
-| `maxTroops` terminal = plafond | city spam sans armée | logger `peakTroops`/`troops`, ajouter un terme plus tard |
-| pénalité de stagnation | attaques suicidaires | petite, plafonnée, condition ET, réductible |
-| tuiles symétriques | moins défensif qu'une perte asymétrique | potential sur l'or seulement ; ajuster `w_t` |
-| spawn en singleplayer | la phase de spawn se termine au spawn humain | vérifier que les 12 IA ont bien spawné au tick 1–2 |
-| map 2048² | coût CPU élevé | curriculum 1024², eval 2048² |
-| workers > cœurs | contention | `--workers` ≤ cœurs physiques |
+| Risque                         | Impact                                       | Mitigation                                               |
+| ------------------------------ | -------------------------------------------- | -------------------------------------------------------- |
+| `maxTroops` terminal = plafond | city spam sans armée                         | logger `peakTroops`/`troops`, ajouter un terme plus tard |
+| pénalité de stagnation         | attaques suicidaires                         | petite, plafonnée, condition ET, réductible              |
+| tuiles symétriques             | moins défensif qu'une perte asymétrique      | potential sur l'or seulement ; ajuster `w_t`             |
+| spawn en singleplayer          | la phase de spawn se termine au spawn humain | vérifier que les 12 IA ont bien spawné au tick 1–2       |
+| map 2048²                      | coût CPU élevé                               | curriculum 1024², eval 2048²                             |
+| workers > cœurs                | contention                                   | `--workers` ≤ cœurs physiques                            |
 
 ---
 
@@ -1247,24 +1249,24 @@ code.
 
 Le goulot d'étranglement est **le simulateur**, pas les 10 k paramètres.
 
-| Optimisation | Gain attendu | Détail |
-| --- | --- | --- |
-| Carte compacte 1024² | **~4×** moins de tuiles que 2048² | `GameMapSize.Compact` pour l'entraînement |
-| Carte 512² custom | **~16×** moins de tuiles | loader custom basé sur `map16x` |
-| Curriculum | plusieurs ordres de grandeur | 1v1 → 3 tribus → 6+1 → cible |
-| Décision toutes les 10 ticks | ~10× moins de forwards | attaque 10, build/upgrade 20, diplomatie sur événement |
-| Observations incrémentales | 2–5× | compteurs/EMA, pas de scan de carte |
-| Cache `maxTroops`, frontières, distances | 2–5× sur l'observation | recalcul au plus une fois par décision |
-| Pruning des candidats | 2–4× | 12 joueurs, 16 structures, 8 types |
-| `worker_threads` 4–8 | ~linéaire jusqu'aux cœurs | un `GameRunner` par worker |
-| Cache des maps + clone | évite les I/O disque | copier les bins bruts, cloner le manifeste |
-| Ignorer les hashes hors replay | ~5–10 % | ne collecter que si `--save-replay` |
-| Replays rares | évite JSON/IO | `--save-replay-best`, `--save-replay-every` |
-| Entraîner l'attaque d'abord | moins de transitions utiles | geler les autres modèles |
-| PPO 1–2 epochs | évite le sur-apprentissage | petits modèles, petits batches |
-| Éval compacte | 4× moins cher | full 2048² seulement toutes les N itérations |
-| Checkpoints poids seulement | I/O négligeable | ~40 Ko au total |
-| Pas de GPU | inutile ici | 10 k paramètres, CPU suffit |
+| Optimisation                             | Gain attendu                      | Détail                                                 |
+| ---------------------------------------- | --------------------------------- | ------------------------------------------------------ |
+| Carte compacte 1024²                     | **~4×** moins de tuiles que 2048² | `GameMapSize.Compact` pour l'entraînement              |
+| Carte 512² custom                        | **~16×** moins de tuiles          | loader custom basé sur `map16x`                        |
+| Curriculum                               | plusieurs ordres de grandeur      | 1v1 → 3 tribus → 6+1 → cible                           |
+| Décision toutes les 10 ticks             | ~10× moins de forwards            | attaque 10, build/upgrade 20, diplomatie sur événement |
+| Observations incrémentales               | 2–5×                              | compteurs/EMA, pas de scan de carte                    |
+| Cache `maxTroops`, frontières, distances | 2–5× sur l'observation            | recalcul au plus une fois par décision                 |
+| Pruning des candidats                    | 2–4×                              | 12 joueurs, 16 structures, 8 types                     |
+| `worker_threads` 4–8                     | ~linéaire jusqu'aux cœurs         | un `GameRunner` par worker                             |
+| Cache des maps + clone                   | évite les I/O disque              | copier les bins bruts, cloner le manifeste             |
+| Ignorer les hashes hors replay           | ~5–10 %                           | ne collecter que si `--save-replay`                    |
+| Replays rares                            | évite JSON/IO                     | `--save-replay-best`, `--save-replay-every`            |
+| Entraîner l'attaque d'abord              | moins de transitions utiles       | geler les autres modèles                               |
+| PPO 1–2 epochs                           | évite le sur-apprentissage        | petits modèles, petits batches                         |
+| Éval compacte                            | 4× moins cher                     | full 2048² seulement toutes les N itérations           |
+| Checkpoints poids seulement              | I/O négligeable                   | ~40 Ko au total                                        |
+| Pas de GPU                               | inutile ici                       | 10 k paramètres, CPU suffit                            |
 
 ### 19.1 Ce qui ne sert à rien
 
@@ -1405,3 +1407,94 @@ parties avec des `gameID` différents produisent des spawns différents.
 
 > **Ne pas lancer l'entraînement avant** : M0 mesuré, reward calibrée, une
 > partie `bot:play` rejouable dans le viewer.
+
+---
+
+## 21. État d'implémentation (phases 0–10)
+
+Les phases 0 à 10 sont implémentées et couvertes par des tests unitaires et
+d'intégration. Le code vit dans `bot/`, les tests dans `tests/bot/`.
+
+### 21.1 Commandes
+
+```bash
+npm run bot:bench -- --config compact --ticks 200
+npm run bot:play  -- --config compact --ticks 1800 --save-replay
+npm run bot:train -- --config compact --iterations 10 --episodes 2
+npm run bot:eval  -- --config compact --games 3 --policy scripted
+npm run bot:eval  -- --weights bot/checkpoints/latest.json --games 3
+npm run replay:api      # sert records/ sur :8787
+npm run start:client    # viewer sur http://localhost:9000/#replay-viewer=<gameID>
+```
+
+`--config target` = TheBox 2048² (config cible) ; `--config compact` = 1024²
+(curriculum/entraînement).
+
+### 21.2 Fichiers
+
+| Module                    | Rôle                                                         |
+| ------------------------- | ------------------------------------------------------------ |
+| `bot/config/target.ts`    | config cible, `clientID`, horizon 1800 ticks                 |
+| `bot/config/reward.ts`    | reward v1 (potential or, delta tuiles, stagnation, terminal) |
+| `bot/input/types.ts`      | dimensions et structures d'observation                       |
+| `bot/input/features.ts`   | `self` (27) et 6 features par adversaire                     |
+| `bot/input/candidates.ts` | sélection déterministe des 16 slots                          |
+| `bot/input/masks.ts`      | masques de légalité (attaques, builds, upgrades, diplomatie) |
+| `bot/input/encode.ts`     | tenseurs fixes                                               |
+| `bot/models/mlp.ts`       | MLP forward/backward pur TypeScript                          |
+| `bot/models/policy.ts`    | softmax masqué, échantillonnage, gradient de politique       |
+| `bot/models/weights.ts`   | dimensions, checkpoints JSON                                 |
+| `bot/runtime/observe.ts`  | `Game` → `Observation`                                       |
+| `bot/runtime/agent.ts`    | 4 comportements + méta-contrôleur par règles                 |
+| `bot/runtime/gameEnv.ts`  | `GameRunner` local + cache de carte                          |
+| `bot/runtime/loop.ts`     | boucle de ticks, hashes par tour                             |
+| `bot/runtime/record.ts`   | `GameRecord` + écriture `records/`                           |
+| `bot/actions/*`           | intents, heuristique de tuile, validation, cadence           |
+| `bot/train/reinforce.ts`  | retours, accumulation de gradients                           |
+| `bot/train/train.ts`      | boucle d'entraînement, checkpoints, évaluation               |
+| `bot/eval/baselines.ts`   | agents aléatoire et scripté                                  |
+| `bot/cli/*`               | `bench`, `play`, `train`, `eval`                             |
+
+### 21.3 Mesures relevées
+
+| Mesure                             | Valeur                                                                 |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| Paramètres des 6 modèles           | **4 927**                                                              |
+| TheBox Compact (1024²), 13 acteurs | ~**316 ticks/s**, ~5 s / épisode de 1800 ticks                         |
+| TheBox Normal (2048²), 13 acteurs  | ~**15–20 ticks/s** (chargement de carte inclus)                        |
+| Record généré                      | `v0.0.2`, `gitCommit: "DEV"`, hashes tous les 10 ticks                 |
+| Replay                             | re-simulation avec hashes identiques (test `tests/bot/Replay.test.ts`) |
+
+### 21.4 Tests
+
+`tests/bot/` couvre :
+
+| Fichier              | Couverture                                                    |
+| -------------------- | ------------------------------------------------------------- |
+| `Features.test.ts`   | dimensions, bornes, absence de NaN                            |
+| `Candidates.test.ts` | sélection déterministe, top-5, cap, distance                  |
+| `Masks.test.ts`      | légalité, TerraNullius, tribus exclues des alliances          |
+| `Mlp.test.ts`        | gradient analytique vs numérique, déterminisme                |
+| `Policy.test.ts`     | softmax masqué, échantillonnage, gradient                     |
+| `Weights.test.ts`    | dimensions, < 10 k paramètres, round-trip checkpoint          |
+| `Reward.test.ts`     | potential, symétrie, stagnation, terminal                     |
+| `Actions.test.ts`    | cadence et construction des intents                           |
+| `GameEnv.test.ts`    | composition 13 acteurs, spawns différents, carte non partagée |
+| `Play.test.ts`       | ticks, hashes, déterminisme, record valide                    |
+| `Validate.test.ts`   | rejet des intents illégaux                                    |
+| `Train.test.ts`      | retours, mise à jour, checkpoints, boucle complète            |
+| `Replay.test.ts`     | re-simulation d'un record avec hashes identiques              |
+
+```bash
+npx vitest run tests/bot --project node
+```
+
+### 21.5 Écarts assumés par rapport au plan
+
+| Point                  | Réalité                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `worker_threads`       | non implémenté ; `--episodes` batch les rollouts séquentiellement. Le gain multi-cœur viendra plus tard.      |
+| PPO                    | REINFORCE avec baseline normalisée, plus simple et suffisant pour 5 k paramètres.                             |
+| Curriculum automatique | les niveaux existent côté config (`compact`/`target`), la promotion est manuelle via `--config`.              |
+| `peakTroops`           | maintenu par le bot (absent des `PlayerUpdate`).                                                              |
+| Potential or           | `gamma = 1` : un revenu constant ne dérive pas en négatif ; l'actualisation reste dans le calcul des retours. |
