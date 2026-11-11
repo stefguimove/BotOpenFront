@@ -1,13 +1,7 @@
 import type { GameConfig, Turn } from "@openfront/engine-api/Schemas";
 import fs from "fs";
 import path from "path";
-import {
-  createRewardState,
-  stepReward,
-  terminalReward,
-  type RewardParams,
-  REWARD_V1,
-} from "../config/reward";
+import { type RewardParams, REWARD_V1 } from "../config/reward";
 import {
   EPISODE_TICKS,
   DECISION_INTERVAL,
@@ -23,102 +17,19 @@ import {
   type AgentWeights,
   type ModelName,
 } from "../models/weights";
-import { BotAgent } from "../runtime/agent";
-import { createBotGame, type BotGame } from "../runtime/gameEnv";
-import { playEpisode, type EpisodeResult } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
+import type { EpisodeTask } from "./episodeWorker";
+import { EpisodePool, defaultWorkerCount } from "./pool";
 import {
   computeAdvantages,
   GradientAccumulator,
   REINFORCE_V1,
   type ReinforceOptions,
-  type TrajectoryStep,
 } from "./reinforce";
 
-export interface EpisodeRun {
-  game: BotGame;
-  result: EpisodeResult;
-  steps: TrajectoryStep[];
-  /** Horizon-relative tick counter used to keep gameIDs unique. */
-  seed: number;
-}
-
-export interface RunEpisodeOptions {
-  gameID: string;
-  config: GameConfig;
-  weights: AgentWeights;
-  mode: "train" | "eval";
-  seed: number;
-  episodeTicks: number;
-  decisionInterval: number;
-  reward: RewardParams;
-}
-
-/**
- * Plays one episode and returns the per-decision trajectory with shaped
- * rewards plus the terminal term.
- */
-export async function runEpisode(
-  options: RunEpisodeOptions,
-): Promise<EpisodeRun> {
-  const game = await createBotGame({
-    gameID: options.gameID,
-    config: options.config,
-  });
-  const agent = new BotAgent({
-    clientID: game.clientID,
-    weights: options.weights,
-    mode: options.mode,
-    seed: options.seed,
-  });
-
-  const reward = createRewardState(0, 0);
-  const steps: TrajectoryStep[] = [];
-  let initialised = false;
-
-  const result = playEpisode(game, {
-    maxTicks: options.episodeTicks,
-    decisionInterval: options.decisionInterval,
-    agent,
-    hooks: {
-      onDecision: ({ game: g, decisions }) => {
-        const me = g.playerByClientID(game.clientID);
-        if (me === null) return;
-        const goldEarned = Number(me.goldEarned());
-        const tiles = me.numTilesOwned();
-        if (!initialised) {
-          // Seed the potential so the first decision earns no free reward.
-          reward.potential = Math.log1p(Math.max(0, goldEarned));
-          reward.goldEarned = goldEarned;
-          reward.tiles = tiles;
-          initialised = true;
-          return;
-        }
-        const step = stepReward(reward, options.reward, goldEarned, tiles);
-        for (const record of decisions) {
-          steps.push({
-            record,
-            reward: step.reward / Math.max(1, decisions.length),
-          });
-        }
-      },
-    },
-  });
-
-  const me = game.game.playerByClientID(game.clientID);
-  const terminal = terminalReward(
-    options.reward,
-    me?.numTilesOwned() ?? 0,
-    game.game.totalLandTiles(),
-    me === null ? 0 : game.game.config().maxTroops(me),
-    result.stats.winner === "bot",
-  );
-  if (steps.length > 0) {
-    steps[steps.length - 1].reward += terminal.reward;
-  }
-
-  return { game, result, steps, seed: options.seed };
-}
+import { runEpisode } from "./episode";
+export type { EpisodeRun, RunEpisodeOptions } from "./episode";
+export { runEpisode };
 
 export interface CheckpointFile {
   version: 1;
@@ -165,6 +76,12 @@ export interface TrainOptions {
   saveReplayBest: boolean;
   replayDir: string;
   log: (message: string) => void;
+  /**
+   * Episodes played concurrently, one worker thread each. 1 keeps everything
+   * in the main thread. Results are identical either way: each episode is
+   * seeded by its gameID.
+   */
+  workers: number;
   /** Weights to start from; `--resume`. Defaults to a fresh seeded init. */
   initialWeights?: AgentWeights;
   /** Iteration number of `initialWeights`, so resumed runs keep counting. */
@@ -183,6 +100,7 @@ export function defaultTrainOptions(
     seed: 1,
     reinforce: REINFORCE_V1,
     reward: REWARD_V1,
+    workers: defaultWorkerCount(),
     checkpointDir: "bot/checkpoints",
     saveEvery: 5,
     evalEvery: 5,
@@ -234,95 +152,140 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
   let episodeCounter = startIteration * episodesPerIteration;
   let gamesPlayed = 0;
 
-  for (let i = 1; i <= options.iterations; i++) {
-    const iteration = startIteration + i;
-    const accumulator = new GradientAccumulator();
-    let steps = 0;
-    let rewardSum = 0;
-    let shareSum = 0;
-    let episodes = 0;
-
-    for (let e = 0; e < episodesPerIteration; e++) {
-      episodeCounter += 1;
-      const gameID = gameIDFor(options.seed, episodeCounter);
-      const run = await runEpisode({
-        gameID,
-        config: options.config,
-        weights,
-        mode: "train",
-        seed: options.seed + episodeCounter,
-        episodeTicks: options.episodeTicks,
-        decisionInterval: options.decisionInterval,
-        reward: options.reward,
-      });
-      if (run.result.error !== undefined) {
-        throw new Error(`episode ${gameID} failed: ${run.result.error}`);
-      }
-      const advantages = computeAdvantages(run.steps, options.reinforce.gamma);
-      for (const step of advantages)
-        accumulator.add(step, weights, options.reinforce);
-      steps += run.steps.length;
-      rewardSum += run.steps.reduce((sum, s) => sum + s.reward, 0);
-      shareSum += run.result.stats.tileShare;
-      episodes += 1;
-    }
-
-    const updatedModels = accumulator.apply(weights, options.reinforce);
-    gamesPlayed += episodes;
-    const report: IterationReport = {
-      iteration,
-      episodes,
-      gamesSoFar: gamesPlayed,
-      steps,
-      meanReward: steps === 0 ? 0 : rewardSum / steps,
-      meanTileShare: episodes === 0 ? 0 : shareSum / episodes,
-      updatedModels,
-    };
-    history.push(report);
-    options.log(
-      `iteration ${iteration}: episodes=${episodes} steps=${steps} ` +
-        `reward=${report.meanReward.toFixed(4)} ` +
-        `tileShare=${report.meanTileShare.toFixed(5)} ` +
-        `updated=${updatedModels.join(",") || "none"}`,
-    );
-
-    if (options.saveEvery > 0 && iteration % options.saveEvery === 0) {
-      const file = saveCheckpoint(options.checkpointDir, iteration, weights);
-      options.log(`checkpoint ${file}`);
-    }
-
-    if (options.evalEvery > 0 && i % options.evalEvery === 0) {
-      const evaluation = await evaluateWeights(weights, {
-        games: Math.max(1, options.evalGames),
-        seed: options.seed + iteration,
-        config: options.config,
-        episodeTicks: options.episodeTicks,
-        decisionInterval: options.decisionInterval,
-        reward: options.reward,
-        saveReplay: false,
-        replayDir: options.replayDir,
-        log: () => {},
-      });
-      const mean =
-        evaluation.shares.reduce((a, b) => a + b, 0) /
-        Math.max(1, evaluation.shares.length);
-      options.log(
-        `iteration ${iteration} eval: tileShare=${mean.toFixed(5)} ` +
-          `reward=${(
-            evaluation.rewards.reduce((a, b) => a + b, 0) /
-            Math.max(1, evaluation.rewards.length)
-          ).toFixed(4)}`,
-      );
-    }
+  const workers = Math.max(1, Math.min(options.workers, episodesPerIteration));
+  const pool = workers > 1 ? new EpisodePool(workers) : null;
+  if (pool !== null) {
+    options.log(`running ${workers} episodes in parallel`);
   }
 
-  return {
-    weights,
-    history,
-    params: totalParams(weights),
-    games: gamesPlayed,
-    episodesPerIteration,
-  };
+  try {
+    for (let i = 1; i <= options.iterations; i++) {
+      const iteration = startIteration + i;
+      const accumulator = new GradientAccumulator();
+
+      // Build every task up front so the gameIDs (and therefore the games)
+      // do not depend on completion order.
+      const tasks: EpisodeTask[] = [];
+      for (let e = 0; e < episodesPerIteration; e++) {
+        episodeCounter += 1;
+        tasks.push({
+          gameID: gameIDFor(options.seed, episodeCounter),
+          config: options.config,
+          weights,
+          mode: "train",
+          seed: options.seed + episodeCounter,
+          episodeTicks: options.episodeTicks,
+          decisionInterval: options.decisionInterval,
+          reward: options.reward,
+        });
+      }
+
+      const outcomes =
+        pool === null ? await sequentially(tasks) : await pool.run(tasks);
+      if (outcomes.length !== tasks.length) {
+        throw new Error(
+          `episode pool returned ${outcomes.length} of ${tasks.length}`,
+        );
+      }
+
+      let steps = 0;
+      let rewardSum = 0;
+      let shareSum = 0;
+      let episodes = 0;
+      for (let index = 0; index < outcomes.length; index++) {
+        const outcome = outcomes[index];
+        if (outcome.error !== undefined) {
+          throw new Error(
+            `episode ${tasks[index].gameID} failed: ${outcome.error}`,
+          );
+        }
+        const advantages = computeAdvantages(
+          outcome.steps,
+          options.reinforce.gamma,
+        );
+        for (const step of advantages) {
+          accumulator.add(step, weights, options.reinforce);
+        }
+        steps += outcome.steps.length;
+        rewardSum += outcome.steps.reduce((sum, s) => sum + s.reward, 0);
+        shareSum += outcome.stats.tileShare;
+        episodes += 1;
+      }
+
+      const updatedModels = accumulator.apply(weights, options.reinforce);
+      gamesPlayed += episodes;
+      const report: IterationReport = {
+        iteration,
+        episodes,
+        gamesSoFar: gamesPlayed,
+        steps,
+        meanReward: steps === 0 ? 0 : rewardSum / steps,
+        meanTileShare: episodes === 0 ? 0 : shareSum / episodes,
+        updatedModels,
+      };
+      history.push(report);
+      options.log(
+        `iteration ${iteration}: episodes=${episodes} steps=${steps} ` +
+          `reward=${report.meanReward.toFixed(4)} ` +
+          `tileShare=${report.meanTileShare.toFixed(5)} ` +
+          `updated=${updatedModels.join(",") || "none"}`,
+      );
+
+      if (options.saveEvery > 0 && iteration % options.saveEvery === 0) {
+        const file = saveCheckpoint(options.checkpointDir, iteration, weights);
+        options.log(`checkpoint ${file}`);
+      }
+
+      if (options.evalEvery > 0 && i % options.evalEvery === 0) {
+        const evaluation = await evaluateWeights(weights, {
+          games: Math.max(1, options.evalGames),
+          seed: options.seed + iteration,
+          config: options.config,
+          episodeTicks: options.episodeTicks,
+          decisionInterval: options.decisionInterval,
+          reward: options.reward,
+          saveReplay: false,
+          replayDir: options.replayDir,
+          log: () => {},
+        });
+        const mean =
+          evaluation.shares.reduce((a, b) => a + b, 0) /
+          Math.max(1, evaluation.shares.length);
+        options.log(
+          `iteration ${iteration} eval: tileShare=${mean.toFixed(5)} ` +
+            `reward=${(
+              evaluation.rewards.reduce((a, b) => a + b, 0) /
+              Math.max(1, evaluation.rewards.length)
+            ).toFixed(4)}`,
+        );
+      }
+    }
+
+    return {
+      weights,
+      history,
+      params: totalParams(weights),
+      games: gamesPlayed,
+      episodesPerIteration,
+    };
+  } finally {
+    await pool?.close();
+  }
+}
+
+/** One episode after another, in this thread. */
+async function sequentially(tasks: readonly EpisodeTask[]) {
+  const { runEpisode } = await import("./episode");
+  const out = [];
+  for (const task of tasks) {
+    const run = await runEpisode(task);
+    out.push({
+      steps: run.steps,
+      stats: run.result.stats,
+      error: run.result.error,
+    });
+  }
+  return out;
 }
 
 /** 8-character alphanumeric id, unique per (seed, episode). */

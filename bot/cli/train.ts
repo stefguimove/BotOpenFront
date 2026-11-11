@@ -14,6 +14,7 @@ import {
   EPISODE_TICKS,
   DECISION_INTERVAL,
 } from "../config/target";
+import { defaultWorkerCount } from "../train/pool";
 import { REINFORCE_V1 } from "../train/reinforce";
 import {
   defaultTrainOptions,
@@ -35,6 +36,7 @@ async function main(): Promise<void> {
     decisionInterval: numArg(args, "decision-interval", DECISION_INTERVAL),
     config: preset === "compact" ? compactConfig() : targetConfig(),
     seed: numArg(args, "seed", 1),
+    workers: numArg(args, "workers", defaultWorkerCount()),
     checkpointDir: strArg(args, "checkpoint-dir", "bot/checkpoints"),
     saveEvery: numArg(args, "save-every", 5),
     evalEvery: numArg(args, "eval-every", 5),
@@ -59,8 +61,9 @@ async function main(): Promise<void> {
   const result = await train(options);
   console.log(
     `done: ${result.games} games ` +
-      `(${result.episodesPerIteration}/iteration), ` +
-      `${result.params} parameters`,
+      `(${result.episodesPerIteration}/iteration, ` +
+      `${Math.max(1, Math.min(options.workers, result.episodesPerIteration))} ` +
+      `in parallel), ${result.params} parameters`,
   );
 
   const evaluation = await evaluateWeights(result.weights, {

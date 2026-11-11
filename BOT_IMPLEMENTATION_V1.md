@@ -997,24 +997,24 @@ npm run bot:train -- \
 
 ### 15.3 Flags
 
-| Flag                  | Défaut            | Rôle                                        |
-| --------------------- | ----------------- | ------------------------------------------- |
-| `--algo`              | `ppo`             | `ppo` ou `reinforce`                        |
-| `--curriculum`        | `0`               | Niveau 0–4 (voir §6.3)                      |
-| `--workers`           | `4`               | Nombre de `GameRunner` parallèles           |
-| `--iterations`        | `10`              | Itérations d'entraînement                   |
-| `--episodes`          | `10`              | Parties par itération (rollouts batchés)    |
-| `--episode-ticks`     | `1800`            | Horizon d'un épisode (3 min)                |
-| `--reward-profile`    | `v1`              | Jeu de poids de récompense                  |
-| `--decision-interval` | `10`              | Décision toutes les N ticks                 |
-| `--checkpoint-dir`    | `bot/checkpoints` | Sauvegarde des poids                        |
-| `--save-every`        | `50`              | Checkpoint tous les N itérations            |
-| `--resume`            | —                 | Reprendre depuis un checkpoint              |
-| `--eval-every`        | `100`             | Évaluation périodique                       |
-| `--eval-games`        | `3`               | Parties d'évaluation par point de contrôle  |
-| `--save-replay-best`  | `false`           | Replay de la meilleure évaluation           |
-| `--save-replay-every` | `0`               | Replay toutes les N itérations (0 = jamais) |
-| `--run-dir`           | `bot/runs`        | Logs et métriques                           |
+| Flag                  | Défaut            | Rôle                                         |
+| --------------------- | ----------------- | -------------------------------------------- |
+| `--algo`              | `ppo`             | `ppo` ou `reinforce`                         |
+| `--curriculum`        | `0`               | Niveau 0–4 (voir §6.3)                       |
+| `--workers`           | `2`               | Parties jouées en parallèle (worker threads) |
+| `--iterations`        | `10`              | Itérations d'entraînement                    |
+| `--episodes`          | `10`              | Parties par itération (rollouts batchés)     |
+| `--episode-ticks`     | `1800`            | Horizon d'un épisode (3 min)                 |
+| `--reward-profile`    | `v1`              | Jeu de poids de récompense                   |
+| `--decision-interval` | `10`              | Décision toutes les N ticks                  |
+| `--checkpoint-dir`    | `bot/checkpoints` | Sauvegarde des poids                         |
+| `--save-every`        | `50`              | Checkpoint tous les N itérations             |
+| `--resume`            | —                 | Reprendre depuis un checkpoint               |
+| `--eval-every`        | `100`             | Évaluation périodique                        |
+| `--eval-games`        | `3`               | Parties d'évaluation par point de contrôle   |
+| `--save-replay-best`  | `false`           | Replay de la meilleure évaluation            |
+| `--save-replay-every` | `0`               | Replay toutes les N itérations (0 = jamais)  |
+| `--run-dir`           | `bot/runs`        | Logs et métriques                            |
 
 Le nombre total de parties vaut exactement `iterations × episodes` : rien ne
 l'ajuste automatiquement. Les valeurs par défaut (10 × 10) donnent 100 parties.
@@ -1511,10 +1511,37 @@ npx vitest run tests/bot --project node
 
 ### 21.5 Écarts assumés par rapport au plan
 
-| Point                  | Réalité                                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `worker_threads`       | non implémenté ; `--episodes` batch les rollouts séquentiellement. Le gain multi-cœur viendra plus tard.      |
-| PPO                    | REINFORCE avec baseline normalisée, plus simple et suffisant pour 5 k paramètres.                             |
-| Curriculum automatique | les niveaux existent côté config (`compact`/`target`), la promotion est manuelle via `--config`.              |
-| `peakTroops`           | maintenu par le bot (absent des `PlayerUpdate`).                                                              |
-| Potential or           | `gamma = 1` : un revenu constant ne dérive pas en négatif ; l'actualisation reste dans le calcul des retours. |
+| Point                  | Réalité                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `worker_threads`       | implémenté : `--workers N` répartit les parties sur des threads, résultats identiques au séquentiel. Défaut 2, mesuré comme l'optimum (moteur memory-bound). |
+| PPO                    | REINFORCE avec baseline normalisée, plus simple et suffisant pour 5 k paramètres.                                                                            |
+| Curriculum automatique | les niveaux existent côté config (`compact`/`target`), la promotion est manuelle via `--config`.                                                             |
+| `peakTroops`           | maintenu par le bot (absent des `PlayerUpdate`).                                                                                                             |
+| Potential or           | `gamma = 1` : un revenu constant ne dérive pas en négatif ; l'actualisation reste dans le calcul des retours.                                                |
+
+### 21.6 Parallélisme des parties
+
+`--workers N` joue N parties en même temps dans des `worker_threads`. Chaque
+épisode est entièrement déterminé par son `gameID`, donc le résultat est
+**identique** au séquentiel (test `Pool.test.ts` le vérifie à 12 décimales) ;
+seul le temps mural change.
+
+Mesure sur une machine 4 cœurs / 16 Go, 24 parties compactes de 1800 ticks :
+
+| Workers | Temps mural | CPU total | Gain      |
+| ------- | ----------- | --------- | --------- |
+| 1       | 46,7 s      | 53 s      | —         |
+| **2**   | **33,0 s**  | 69 s      | **1,42×** |
+| 3       | 36,1 s      | 86 s      | 1,29×     |
+| 4       | 35,3 s      | 93 s      | 1,32×     |
+
+Au-delà de 2, le CPU consommé continue d'augmenter sans réduire le temps mural :
+la simulation est limitée par la bande passante mémoire (accès aléatoires à la
+grille de tuiles), pas par le calcul. D'où le défaut à 2 ; `--workers` permet de
+monter sur une machine mieux dotée.
+
+### 21.7 Reprise et suivi
+
+`--resume <checkpoint>` reprend **réellement** les poids (et non plus seulement
+l'affichage), continue la numérotation des itérations et la séquence de parties,
+et `--eval-every N` produit une ligne d'évaluation toutes les N itérations.
