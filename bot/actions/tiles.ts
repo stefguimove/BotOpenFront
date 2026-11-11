@@ -21,8 +21,15 @@ export function isStructure(type: UnitType): boolean {
  * A tile the player can build `type` on, without scanning the whole map.
  *
  * Structures: try the spawn tile (the engine searches 15 tiles around the
- * click), then a bounded sample of owned tiles. Nukes: try the preferred
- * target tile, then the tile of the nearest non-friendly player.
+ * click), then a bounded sample of owned tiles, preferring interior tiles.
+ * Nukes: try the preferred target tile, then the tile of the nearest
+ * non-friendly player.
+ *
+ * The intent's tile is re-validated by the engine when the execution runs, and
+ * the front line moves every tick. A build clicked on a border tile can
+ * therefore be lost between the decision and its execution (the engine logs
+ * `cannot build X` and drops the intent). Interior tiles have no hostile
+ * neighbour, so they survive that window.
  */
 export function chooseBuildTile(
   game: Game,
@@ -52,13 +59,18 @@ export function chooseBuildTile(
     if (tile !== false) return tile;
   }
 
+  const border = player.borderTiles();
+  let fallback: number | false = false;
   let probed = 0;
   for (const tile of player.tiles()) {
     const built = player.canBuild(type, tile);
-    if (built !== false) return built;
+    if (built !== false) {
+      if (!border.has(built)) return built;
+      if (fallback === false) fallback = built;
+    }
     if (++probed >= MAX_TILE_PROBES) break;
   }
-  return false;
+  return fallback;
 }
 
 /** The first unit of `type` the player can upgrade, if any. */

@@ -673,6 +673,35 @@ qu'il devra reproduire quand la roulette sera retirée.
 > épisodes en mode `eval`, donc sans roulette. Le score affiché pendant
 > l'entraînement mesure la politique **sans aide**.
 
+#### 6.4.10 Journaux du moteur pendant l'entraînement
+
+Trois avertissements du moteur apparaissent dans les longues sessions. Aucun
+n'est une erreur du bot, et aucun ne modifie l'état du jeu :
+
+| Message                                      | Origine                                                      | Conséquence                                  |
+| -------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------- |
+| `cannot send emoji from Player:{...} to ...` | IA des nations (`NationEmojiBehavior`), fenêtre anti-spam    | l'emoji est jeté                             |
+| `Didn't find outgoing attack with id <id>`   | notre `cancel_attack`, l'attaque a disparu dans le même tick | no-op                                        |
+| `cannot build <UnitType>`                    | `ConstructionExecution` : `player.canBuild()` a échoué       | l'intent est abandonné, **aucun or dépensé** |
+
+Détail du dernier : `canBuild` est vérifié **avant** `buildUnit()`, seul endroit
+qui appelle `removeGold()`. Un échec ne coûte donc rien ; il vient de l'état qui
+a changé entre notre décision et l'exécution du même tick (nos intents sont mis
+en file après les exécutions de territoire, donc la ligne de front a bougé, ou
+une structure vient d'apparaître à moins de `structureMinDist`).
+
+Mitigation en place : `chooseBuildTile` privilégie une **tuile intérieure**
+(`!player.borderTiles().has(tile)`) pour les structures, avec repli sur la
+première tuile légale. Mesuré sur 3 parties de 3 600 ticks : 10 intents de
+construction, **10/10 sur tuile intérieure, 0 avertissement**, et les
+constructions aboutissent bien (1 Ville, 1 Usine, 1 Defense Post par partie).
+
+Constat : avec la porte de construction (§21.8, P5) et la roulette (§6.4.9), le
+bot ne construit plus que ~3 fois par partie, donc ces messages ont quasiment
+disparu. Les journaux très fournis observés pendant l'entraînement venaient de
+la version antérieure, où le Defense Post était le seul candidat abordable et
+était retenté en boucle.
+
 ### 6.5 Algorithme
 
 Recommandation : **PPO** par modèle, avec les mêmes rollouts partagés.
