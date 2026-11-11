@@ -147,10 +147,36 @@ export function loadCheckpoint(file: string): CheckpointFile {
   return { version: 1, iteration: raw.iteration ?? 0, weights };
 }
 
+/**
+ * A run below this many games has too little data to update a policy on:
+ * one game is a single random spawn, not a training signal. The floor is
+ * enforced by `train()` (see `episodesToReachMinimum`).
+ */
+export const MIN_TRAINING_GAMES = 100;
+
+/**
+ * Episodes per iteration needed to reach `minGames` in `iterations`
+ * iterations, never below what the caller asked for.
+ */
+export function episodesToReachMinimum(
+  iterations: number,
+  requested: number,
+  minGames: number,
+): number {
+  const rounds = Math.max(1, Math.floor(iterations));
+  const needed = Math.ceil(Math.max(0, minGames) / rounds);
+  return Math.max(1, Math.max(Math.floor(requested), needed));
+}
+
 export interface TrainOptions {
   iterations: number;
   /** Episodes per iteration. Each gets its own GameRunner, sequentially. */
   episodesPerIteration: number;
+  /**
+   * Floor on the total number of games played (iterations x episodes). 0
+   * disables the floor, which only tests do.
+   */
+  minGames: number;
   episodeTicks: number;
   decisionInterval: number;
   config: GameConfig;
@@ -171,7 +197,8 @@ export function defaultTrainOptions(
 ): TrainOptions {
   return {
     iterations: 10,
-    episodesPerIteration: 2,
+    episodesPerIteration: 10,
+    minGames: MIN_TRAINING_GAMES,
     episodeTicks: EPISODE_TICKS,
     decisionInterval: DECISION_INTERVAL,
     config: targetConfig(),
@@ -192,6 +219,7 @@ export function defaultTrainOptions(
 export interface IterationReport {
   iteration: number;
   episodes: number;
+  gamesSoFar: number;
   steps: number;
   meanReward: number;
   meanTileShare: number;
@@ -202,6 +230,10 @@ export interface TrainResult {
   weights: AgentWeights;
   history: IterationReport[];
   params: number;
+  /** Total games played across all iterations. */
+  games: number;
+  /** Episodes per iteration actually used (after the minimum-game floor). */
+  episodesPerIteration: number;
 }
 
 /**
@@ -213,6 +245,21 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
   let weights = createWeights(options.seed);
   const history: IterationReport[] = [];
   let episodeCounter = 0;
+  let gamesPlayed = 0;
+
+  const episodesPerIteration = episodesToReachMinimum(
+    options.iterations,
+    options.episodesPerIteration,
+    options.minGames,
+  );
+  if (episodesPerIteration !== options.episodesPerIteration) {
+    options.log(
+      `raising episodes per iteration from ${options.episodesPerIteration} ` +
+        `to ${episodesPerIteration}: ${options.iterations} iterations x ` +
+        `${options.episodesPerIteration} games is below the ` +
+        `${options.minGames}-game minimum`,
+    );
+  }
 
   for (let iteration = 1; iteration <= options.iterations; iteration++) {
     const accumulator = new GradientAccumulator();
@@ -221,7 +268,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
     let shareSum = 0;
     let episodes = 0;
 
-    for (let e = 0; e < options.episodesPerIteration; e++) {
+    for (let e = 0; e < episodesPerIteration; e++) {
       episodeCounter += 1;
       const gameID = gameIDFor(options.seed, episodeCounter);
       const run = await runEpisode({
@@ -247,9 +294,11 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
     }
 
     const updatedModels = accumulator.apply(weights, options.reinforce);
+    gamesPlayed += episodes;
     const report: IterationReport = {
       iteration,
       episodes,
+      gamesSoFar: gamesPlayed,
       steps,
       meanReward: steps === 0 ? 0 : rewardSum / steps,
       meanTileShare: episodes === 0 ? 0 : shareSum / episodes,
@@ -269,7 +318,13 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
     }
   }
 
-  return { weights, history, params: totalParams(weights) };
+  return {
+    weights,
+    history,
+    params: totalParams(weights),
+    games: gamesPlayed,
+    episodesPerIteration,
+  };
 }
 
 /** 8-character alphanumeric id, unique per (seed, episode). */

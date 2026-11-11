@@ -997,30 +997,38 @@ npm run bot:train -- \
 
 ### 15.3 Flags
 
-| Flag                    | Défaut            | Rôle                                        |
-| ----------------------- | ----------------- | ------------------------------------------- |
-| `--algo`                | `ppo`             | `ppo` ou `reinforce`                        |
-| `--curriculum`          | `0`               | Niveau 0–4 (voir §6.3)                      |
-| `--workers`             | `4`               | Nombre de `GameRunner` parallèles           |
-| `--iterations`          | `500`             | Itérations d'entraînement                   |
-| `--episodes-per-worker` | `2`               | Épisodes par worker et par itération        |
-| `--episode-ticks`       | `1800`            | Horizon d'un épisode (3 min)                |
-| `--reward-profile`      | `v1`              | Jeu de poids de récompense                  |
-| `--decision-interval`   | `10`              | Décision toutes les N ticks                 |
-| `--checkpoint-dir`      | `bot/checkpoints` | Sauvegarde des poids                        |
-| `--save-every`          | `50`              | Checkpoint tous les N itérations            |
-| `--resume`              | —                 | Reprendre depuis un checkpoint              |
-| `--eval-every`          | `100`             | Évaluation périodique                       |
-| `--eval-games`          | `3`               | Parties d'évaluation par point de contrôle  |
-| `--save-replay-best`    | `false`           | Replay de la meilleure évaluation           |
-| `--save-replay-every`   | `0`               | Replay toutes les N itérations (0 = jamais) |
-| `--run-dir`             | `bot/runs`        | Logs et métriques                           |
+| Flag                  | Défaut            | Rôle                                        |
+| --------------------- | ----------------- | ------------------------------------------- |
+| `--algo`              | `ppo`             | `ppo` ou `reinforce`                        |
+| `--curriculum`        | `0`               | Niveau 0–4 (voir §6.3)                      |
+| `--workers`           | `4`               | Nombre de `GameRunner` parallèles           |
+| `--iterations`        | `10`              | Itérations d'entraînement                   |
+| `--episodes`          | `10`              | Parties par itération (rollouts batchés)    |
+| `--min-games`         | `100`             | Plancher du nombre total de parties jouées  |
+| `--episode-ticks`     | `1800`            | Horizon d'un épisode (3 min)                |
+| `--reward-profile`    | `v1`              | Jeu de poids de récompense                  |
+| `--decision-interval` | `10`              | Décision toutes les N ticks                 |
+| `--checkpoint-dir`    | `bot/checkpoints` | Sauvegarde des poids                        |
+| `--save-every`        | `50`              | Checkpoint tous les N itérations            |
+| `--resume`            | —                 | Reprendre depuis un checkpoint              |
+| `--eval-every`        | `100`             | Évaluation périodique                       |
+| `--eval-games`        | `3`               | Parties d'évaluation par point de contrôle  |
+| `--save-replay-best`  | `false`           | Replay de la meilleure évaluation           |
+| `--save-replay-every` | `0`               | Replay toutes les N itérations (0 = jamais) |
+| `--run-dir`           | `bot/runs`        | Logs et métriques                           |
+
+Le nombre total de parties vaut `iterations × episodes`. Un entraînement sous
+`--min-games` (100 par défaut) est **relevé automatiquement** :
+`train()` augmente `episodesPerIteration` à `ceil(minGames / iterations)` et le
+log l'annonce. Une seule partie n'est pas un signal d'apprentissage : elle ne
+représente qu'un spawn aléatoire. `--min-games 0` désactive le plancher (tests
+uniquement).
 
 ### 15.4 Pipeline d'entraînement
 
 1. **Chargement** de la config cible et du curriculum.
 2. **Spawn des workers** : chaque worker crée un `GameRunner`, charge une copie
-   des poids, joue `episodes-per-worker` épisodes de `--episode-ticks`
+   des poids, joue `--episodes` parties de `--episode-ticks`
    (1800 par défaut = 3 min).
 3. **Rollouts** : chaque worker renvoie les transitions
    `(observation, action, récompense, masque, done)`.
@@ -1434,7 +1442,7 @@ au `npm ci` (le dépôt exige Node 24 dans `package.json`).
 ```bash
 npm run bot:bench -- --config compact --ticks 200
 npm run bot:play  -- --config compact --ticks 1800 --save-replay
-npm run bot:train -- --config compact --iterations 10 --episodes 2
+npm run bot:train -- --config compact --iterations 10 --episodes 10   # 100 parties
 npm run bot:eval  -- --config compact --games 3 --policy scripted
 npm run bot:eval  -- --weights bot/checkpoints/latest.json --games 3
 npm run replay:api      # sert records/ sur :8787
