@@ -1415,7 +1415,21 @@ parties avec des `gameID` différents produisent des spawns différents.
 Les phases 0 à 10 sont implémentées et couvertes par des tests unitaires et
 d'intégration. Le code vit dans `bot/`, les tests dans `tests/bot/`.
 
-### 21.1 Commandes
+### 21.1 Installation et commandes
+
+Installation des prérequis (Node, dépendances npm, cartes) :
+
+```bash
+npm run bot:setup                 # ou: bash scripts/install-bot.sh
+bash scripts/install-bot.sh --check   # vérifie sans rien installer
+bash scripts/install-bot.sh --smoke   # installe puis joue 20 ticks
+bash scripts/install-bot.sh --python  # crée aussi un .venv (optionnel)
+```
+
+Le trainer v1 est **100 % TypeScript** : aucun paquet Python n'est requis. Le
+`.venv` n'est créé que sur demande et n'installe `bot/requirements.txt` que si
+ce fichier existe. Le script accepte Node 22 en passant `--engine-strict=false`
+au `npm ci` (le dépôt exige Node 24 dans `package.json`).
 
 ```bash
 npm run bot:bench -- --config compact --ticks 200

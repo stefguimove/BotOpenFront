@@ -21,6 +21,7 @@
     "dev:prod": "cross-env GAME_ENV=dev API_DOMAIN=api.openfront.io concurrently \"npm run start:client\" \"npm run start:server-dev\"",
     "replay:api": "tsx scripts/replay/stub-game-api.mts records 8787",
     "replay:demo": "tsx scripts/replay/record-demo.mts",
+    "bot:setup": "bash scripts/install-bot.sh",
     "bot:bench": "tsx bot/cli/bench.ts",
     "bot:play": "tsx bot/cli/play.ts",
     "bot:train": "tsx bot/cli/train.ts",
