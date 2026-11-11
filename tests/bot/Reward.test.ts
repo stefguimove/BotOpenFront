@@ -46,49 +46,24 @@ describe("stepReward", () => {
     state.tiles = 500;
     const step = stepReward(state, REWARD_V1, 5_000, 500);
     expect(step.reward).toBe(0);
-    expect(step.stagnant).toBe(true);
   });
 
-  test("does not penalise stagnation during warmup", () => {
-    const state = createRewardState(1_000, 100);
-    let penalty = 0;
-    for (let i = 0; i < REWARD_V1.stagWarmup; i++) {
-      penalty += stepReward(state, REWARD_V1, 1_000, 100).stagnation;
-    }
-    expect(penalty).toBe(0);
-  });
-
-  test("applies a small penalty after the warmup and run length", () => {
-    const state = createRewardState(1_000, 100);
-    for (let i = 0; i < REWARD_V1.stagWarmup; i++) {
-      stepReward(state, REWARD_V1, 1_000, 100);
-    }
-    let penalty = 0;
-    for (let i = 0; i < REWARD_V1.stagDecisions; i++) {
-      penalty += stepReward(state, REWARD_V1, 1_000, 100).stagnation;
-    }
-    expect(penalty).toBeLessThan(0);
-  });
-
-  test("cancels the penalty as soon as one signal moves", () => {
-    const state = createRewardState(1_000, 100);
-    for (let i = 0; i < REWARD_V1.stagWarmup; i++) {
-      stepReward(state, REWARD_V1, 1_000, 100);
-    }
-    stepReward(state, REWARD_V1, 1_000, 100);
-    const moving = stepReward(state, REWARD_V1, 1_500, 100);
-    expect(moving.stagnation).toBe(0);
-    expect(moving.stagnant).toBe(false);
-  });
-
-  test("caps the stagnation penalty per episode", () => {
+  test("never punishes standing still", () => {
+    // No stagnation penalty: holding position with no new revenue is worth
+    // exactly nothing, forever, and nothing in the state accumulates.
     const state = createRewardState(1_000, 100);
     for (let i = 0; i < 10_000; i++) {
-      stepReward(state, REWARD_V1, 1_000, 100);
+      expect(stepReward(state, REWARD_V1, 1_000, 100).reward).toBe(0);
     }
-    expect(state.stagnationPenalty).toBeLessThanOrEqual(
-      REWARD_V1.stagCap + 1e-12,
-    );
+    expect(state.total).toBe(0);
+  });
+
+  test("keeps a losing decision symmetric with a winning one", () => {
+    const state = createRewardState(1_000, 1_000);
+    const stay = stepReward(state, REWARD_V1, 1_000, 1_000);
+    const lose = stepReward(state, REWARD_V1, 1_000, 900);
+    expect(stay.reward).toBe(0);
+    expect(lose.reward).toBeLessThan(0);
   });
 
   test("clips per-decision reward", () => {

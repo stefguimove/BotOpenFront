@@ -1,7 +1,6 @@
 import { UnitType } from "@openfront/engine-api/game/GameTypes";
 import type { StampedIntent } from "@openfront/engine-api/Schemas";
 import type { Game, Player } from "@openfront/engine/game/Game";
-import { ATTACK_POLICY, attackAllowed } from "../actions/attackPolicy";
 import { due, type Behaviour } from "../actions/cadence";
 import {
   allianceExtensionIntent,
@@ -57,8 +56,6 @@ export interface BotAgentOptions {
   weights: AgentWeights;
   mode?: AgentMode;
   seed?: number;
-  /** Fraction of maxTroops to hold before attacking (see `ATTACK_POLICY`). */
-  reserve?: number;
 }
 
 /**
@@ -74,7 +71,6 @@ export class BotAgent implements Agent {
   private readonly clientID: string;
   private readonly weights: AgentWeights;
   private readonly mode: AgentMode;
-  private readonly reserve: number;
   private readonly rng: Rng;
   private memory: ObservationMemory = createObservationMemory();
   /** Decisions sampled on the last `decide()`, in order. */
@@ -84,7 +80,6 @@ export class BotAgent implements Agent {
     this.clientID = options.clientID;
     this.weights = options.weights;
     this.mode = options.mode ?? "eval";
-    this.reserve = options.reserve ?? ATTACK_POLICY.reserve;
     this.rng = makeRng(options.seed ?? 1234);
   }
 
@@ -104,12 +99,7 @@ export class BotAgent implements Agent {
     const cancel = this.maybeCancel(player);
     if (cancel !== null) intents.push(cancel);
 
-    const options = this.applicable(
-      obs,
-      tick,
-      player,
-      game.config().maxTroops(player),
-    );
+    const options = this.applicable(obs, tick);
     if (options.length === 0) return intents;
 
     const behaviour = this.pickBehaviour(options, obs);
@@ -133,18 +123,9 @@ export class BotAgent implements Agent {
     return null;
   }
 
-  private applicable(
-    obs: Observation,
-    tick: number,
-    player: Player,
-    maxTroops: number,
-  ): Behaviour[] {
+  private applicable(obs: Observation, tick: number): Behaviour[] {
     const options: Behaviour[] = [];
-    if (
-      due("attack", tick) &&
-      attackTargets(obs).length > 0 &&
-      attackAllowed(Number(player.troops()), maxTroops, this.reserve)
-    ) {
+    if (due("attack", tick) && attackTargets(obs).length > 0) {
       options.push("attack");
     }
     if (due("build", tick) && buildMask(obs).some(Boolean)) {

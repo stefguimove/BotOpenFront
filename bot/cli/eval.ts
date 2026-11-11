@@ -10,7 +10,6 @@ import { REWARD_V1 } from "../config/reward";
  * Printed metrics are the 3-minute ones: tile share, maxTroops (cap),
  * peakTroops and current troops.
  */
-import { ATTACK_POLICY } from "../actions/attackPolicy";
 import {
   EPISODE_TICKS,
   DECISION_INTERVAL,
@@ -93,7 +92,6 @@ async function main(): Promise<void> {
     episodeTicks: ticks,
     decisionInterval: interval,
     reward: REWARD_V1,
-    reserve: numArg(args, "reserve", ATTACK_POLICY.reserve),
     saveReplay,
     replayDir,
     log: (message) => console.log(message),

@@ -1,11 +1,11 @@
 /**
- * Reward v1: potential-based revenue, symmetric territory delta, a small
- * explicit stagnation penalty, and a 3-minute terminal term.
+ * Reward v1: potential-based revenue, symmetric territory delta, a low-army
+ * penalty, and a 3-minute terminal term.
  *
  * Decisions were made in BOT_IMPLEMENTATION_V1.md §6.4:
  *  - rates are potential-based (`goldEarned`, insensitive to spending);
  *  - tile changes are symmetric and direct (no second potential);
- *  - stagnation is an ET of zero gold and zero tiles, small and capped;
+ *  - standing still is not punished: there is no stagnation penalty;
  *  - the 3-minute terminal is tile share + maxTroops.
  */
 export interface RewardParams {
@@ -15,14 +15,6 @@ export interface RewardParams {
   wTiles: number;
   /** Tiles per unit of reward. */
   tileScale: number;
-  /** Penalty per stagnant decision. */
-  cStag: number;
-  /** Consecutive stagnant decisions before the penalty applies. */
-  stagDecisions: number;
-  /** Maximum total stagnation penalty per episode. */
-  stagCap: number;
-  /** Decisions before the stagnation penalty can trigger. */
-  stagWarmup: number;
   /** Terminal weight on tile share. */
   wEndTiles: number;
   /** Terminal weight on normalized maxTroops. */
@@ -56,10 +48,6 @@ export const REWARD_V1: RewardParams = {
   wGold: 1,
   wTiles: 1,
   tileScale: 1000,
-  cStag: 0.001,
-  stagDecisions: 5,
-  stagCap: 0.05,
-  stagWarmup: 10,
   wEndTiles: 1,
   wEndMaxTroops: 0.5,
   wWin: 0,
@@ -78,17 +66,9 @@ export interface RewardState {
   goldEarned: number;
   tiles: number;
   potential: number;
-  stagnantRun: number;
-  stagnantDecisions: number;
-  stagnationPenalty: number;
   lowArmyPenalty: number;
   total: number;
-  components: {
-    gold: number;
-    tiles: number;
-    stagnation: number;
-    lowArmy: number;
-  };
+  components: { gold: number; tiles: number; lowArmy: number };
 }
 
 /** Standing army, used by the low-army penalty. */
@@ -105,12 +85,9 @@ export function createRewardState(
     goldEarned,
     tiles,
     potential: potentialOf(goldEarned, REWARD_V1),
-    stagnantRun: 0,
-    stagnantDecisions: 0,
-    stagnationPenalty: 0,
     lowArmyPenalty: 0,
     total: 0,
-    components: { gold: 0, tiles: 0, stagnation: 0, lowArmy: 0 },
+    components: { gold: 0, tiles: 0, lowArmy: 0 },
   };
 }
 
@@ -131,9 +108,7 @@ export interface RewardStep {
   reward: number;
   gold: number;
   tiles: number;
-  stagnation: number;
   lowArmy: number;
-  stagnant: boolean;
 }
 
 /**
@@ -159,8 +134,8 @@ function lowArmyPenalty(
 }
 
 /**
- * Consumes the state at the next decision. Gold uses a potential, tiles use
- * a direct symmetric delta, and stagnation needs BOTH to be unchanged.
+ * Consumes the state at the next decision. Gold uses a potential, tiles use a
+ * direct symmetric delta, and a small army costs a bounded penalty.
  */
 export function stepReward(
   state: RewardState,
@@ -176,24 +151,9 @@ export function stepReward(
   const tileReward =
     (params.wTiles * deltaTiles) / Math.max(1, params.tileScale);
 
-  const stagnant = deltaTiles === 0 && safe(goldEarned) === state.goldEarned;
-  state.stagnantRun = stagnant ? state.stagnantRun + 1 : 0;
-  state.stagnantDecisions += 1;
-
-  let stagnationReward = 0;
-  if (
-    stagnant &&
-    state.stagnantDecisions > params.stagWarmup &&
-    state.stagnantRun >= params.stagDecisions &&
-    state.stagnationPenalty < params.stagCap
-  ) {
-    stagnationReward = -params.cStag;
-    state.stagnationPenalty += params.cStag;
-  }
-
   const lowArmyReward = lowArmyPenalty(state, params, army);
 
-  const raw = goldReward + tileReward + stagnationReward + lowArmyReward;
+  const raw = goldReward + tileReward + lowArmyReward;
   const reward = clip(raw, params.clip);
 
   state.potential = nextPotential;
@@ -202,16 +162,13 @@ export function stepReward(
   state.total += reward;
   state.components.gold += goldReward;
   state.components.tiles += tileReward;
-  state.components.stagnation += stagnationReward;
   state.components.lowArmy += lowArmyReward;
 
   return {
     reward,
     gold: goldReward,
     tiles: tileReward,
-    stagnation: stagnationReward,
     lowArmy: lowArmyReward,
-    stagnant,
   };
 }
 

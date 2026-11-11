@@ -28,8 +28,6 @@ export interface RunEpisodeOptions {
   episodeTicks: number;
   decisionInterval: number;
   reward: RewardParams;
-  /** Fraction of maxTroops to hold before attacking; see `ATTACK_POLICY`. */
-  reserve?: number;
 }
 
 /**
@@ -48,7 +46,6 @@ export async function runEpisode(
     weights: options.weights,
     mode: options.mode,
     seed: options.seed,
-    reserve: options.reserve,
   });
 
   const reward = createRewardState(0, 0);
