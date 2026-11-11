@@ -53,6 +53,8 @@ async function main(): Promise<void> {
   if (startedFrom !== null) {
     console.log(`resuming from ${resume} (iteration ${startedFrom.iteration})`);
   }
+  options.initialWeights = startedFrom?.weights;
+  options.startIteration = startedFrom?.iteration ?? 0;
 
   const result = await train(options);
   console.log(
@@ -79,7 +81,7 @@ async function main(): Promise<void> {
 
   const file = saveCheckpoint(
     options.checkpointDir,
-    options.iterations,
+    options.startIteration + options.iterations,
     result.weights,
   );
   console.log(`final checkpoint ${file}`);

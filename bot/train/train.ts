@@ -15,6 +15,7 @@ import {
   BOT_CLIENT_ID,
 } from "../config/target";
 import {
+  cloneWeights,
   createWeights,
   fromCheckpoint,
   toCheckpoint,
@@ -164,6 +165,10 @@ export interface TrainOptions {
   saveReplayBest: boolean;
   replayDir: string;
   log: (message: string) => void;
+  /** Weights to start from; `--resume`. Defaults to a fresh seeded init. */
+  initialWeights?: AgentWeights;
+  /** Iteration number of `initialWeights`, so resumed runs keep counting. */
+  startIteration?: number;
 }
 
 export function defaultTrainOptions(
@@ -217,13 +222,20 @@ export interface TrainResult {
  * nothing adjusts it behind the caller's back.
  */
 export async function train(options: TrainOptions): Promise<TrainResult> {
-  let weights = createWeights(options.seed);
+  const weights =
+    options.initialWeights !== undefined
+      ? cloneWeights(options.initialWeights)
+      : createWeights(options.seed);
   const history: IterationReport[] = [];
-  let episodeCounter = 0;
-  let gamesPlayed = 0;
   const episodesPerIteration = Math.max(1, options.episodesPerIteration);
+  const startIteration = Math.max(0, options.startIteration ?? 0);
+  // Resumed runs continue the episode sequence, so they play different games
+  // instead of replaying the ones the earlier run already learned from.
+  let episodeCounter = startIteration * episodesPerIteration;
+  let gamesPlayed = 0;
 
-  for (let iteration = 1; iteration <= options.iterations; iteration++) {
+  for (let i = 1; i <= options.iterations; i++) {
+    const iteration = startIteration + i;
     const accumulator = new GradientAccumulator();
     let steps = 0;
     let rewardSum = 0;
@@ -277,6 +289,30 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
     if (options.saveEvery > 0 && iteration % options.saveEvery === 0) {
       const file = saveCheckpoint(options.checkpointDir, iteration, weights);
       options.log(`checkpoint ${file}`);
+    }
+
+    if (options.evalEvery > 0 && i % options.evalEvery === 0) {
+      const evaluation = await evaluateWeights(weights, {
+        games: Math.max(1, options.evalGames),
+        seed: options.seed + iteration,
+        config: options.config,
+        episodeTicks: options.episodeTicks,
+        decisionInterval: options.decisionInterval,
+        reward: options.reward,
+        saveReplay: false,
+        replayDir: options.replayDir,
+        log: () => {},
+      });
+      const mean =
+        evaluation.shares.reduce((a, b) => a + b, 0) /
+        Math.max(1, evaluation.shares.length);
+      options.log(
+        `iteration ${iteration} eval: tileShare=${mean.toFixed(5)} ` +
+          `reward=${(
+            evaluation.rewards.reduce((a, b) => a + b, 0) /
+            Math.max(1, evaluation.rewards.length)
+          ).toFixed(4)}`,
+      );
     }
   }
 

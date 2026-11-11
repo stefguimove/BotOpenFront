@@ -175,3 +175,62 @@ describe("train", () => {
     }
   }, 60_000);
 });
+
+describe("resume and periodic evaluation", () => {
+  test("resuming starts from the loaded weights and keeps counting", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bot-resume-"));
+    try {
+      const seedWeights = createWeights(21);
+      const options = defaultTrainOptions({
+        iterations: 1,
+        episodesPerIteration: 1,
+        episodeTicks: 40,
+        decisionInterval: 10,
+        config: compactConfig(),
+        seed: 5,
+        checkpointDir: dir,
+        saveEvery: 1,
+        evalEvery: 0,
+        initialWeights: seedWeights,
+        startIteration: 7,
+        log: () => {},
+      });
+      const result = await train(options);
+      // The first iteration after a resume is numbered 8, not 1.
+      expect(result.history[0].iteration).toBe(8);
+      const saved = loadCheckpoint(path.join(dir, "iteration-00008.json"));
+      expect(saved.iteration).toBe(8);
+      expect(saved.weights).toEqual(result.weights);
+      // Starting point was the loaded weights, not a fresh `--seed` init.
+      expect(result.weights).not.toEqual(createWeights(5));
+      // And at least one model actually received a gradient.
+      expect(result.history[0].updatedModels.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test("evalEvery produces an evaluation log line", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bot-eval-"));
+    const logs: string[] = [];
+    try {
+      await train(
+        defaultTrainOptions({
+          iterations: 2,
+          episodesPerIteration: 1,
+          episodeTicks: 40,
+          decisionInterval: 10,
+          config: compactConfig(),
+          checkpointDir: dir,
+          saveEvery: 0,
+          evalEvery: 1,
+          evalGames: 1,
+          log: (message) => logs.push(message),
+        }),
+      );
+      expect(logs.some((line) => line.includes("eval:"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
