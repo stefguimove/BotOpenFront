@@ -13,6 +13,11 @@ import {
   upgradeStructureIntent,
 } from "../actions/intents";
 import { chooseBuildTile, isNuke } from "../actions/tiles";
+import {
+  resolveTrainingWheels,
+  trainingWheelsAllowAttack,
+  type TrainingWheels,
+} from "../actions/trainingWheels";
 import { validateIntent } from "../actions/validate";
 import { concatInputs } from "../input/encode";
 import {
@@ -56,6 +61,11 @@ export interface BotAgentOptions {
   weights: AgentWeights;
   mode?: AgentMode;
   seed?: number;
+  /**
+   * Temporary rule forbidding attacks below a fraction of the cap. Defaults to
+   * on in train mode and off in eval mode; `null` disables it explicitly.
+   */
+  trainingWheels?: TrainingWheels | null;
 }
 
 /**
@@ -71,6 +81,7 @@ export class BotAgent implements Agent {
   private readonly clientID: string;
   private readonly weights: AgentWeights;
   private readonly mode: AgentMode;
+  private readonly wheels: TrainingWheels | null;
   private readonly rng: Rng;
   private memory: ObservationMemory = createObservationMemory();
   /** Decisions sampled on the last `decide()`, in order. */
@@ -80,7 +91,13 @@ export class BotAgent implements Agent {
     this.clientID = options.clientID;
     this.weights = options.weights;
     this.mode = options.mode ?? "eval";
+    this.wheels = resolveTrainingWheels(this.mode, options.trainingWheels);
     this.rng = makeRng(options.seed ?? 1234);
+  }
+
+  /** The active training wheels, `null` when the bot plays unaided. */
+  get trainingWheels(): TrainingWheels | null {
+    return this.wheels;
   }
 
   reset(): void {
@@ -99,7 +116,12 @@ export class BotAgent implements Agent {
     const cancel = this.maybeCancel(player);
     if (cancel !== null) intents.push(cancel);
 
-    const options = this.applicable(obs, tick);
+    const options = this.applicable(
+      obs,
+      tick,
+      player,
+      game.config().maxTroops(player),
+    );
     if (options.length === 0) return intents;
 
     const behaviour = this.pickBehaviour(options, obs);
@@ -123,9 +145,18 @@ export class BotAgent implements Agent {
     return null;
   }
 
-  private applicable(obs: Observation, tick: number): Behaviour[] {
+  private applicable(
+    obs: Observation,
+    tick: number,
+    player: Player,
+    maxTroops: number,
+  ): Behaviour[] {
     const options: Behaviour[] = [];
-    if (due("attack", tick) && attackTargets(obs).length > 0) {
+    if (
+      due("attack", tick) &&
+      attackTargets(obs).length > 0 &&
+      trainingWheelsAllowAttack(Number(player.troops()), maxTroops, this.wheels)
+    ) {
       options.push("attack");
     }
     if (due("build", tick) && buildMask(obs).some(Boolean)) {

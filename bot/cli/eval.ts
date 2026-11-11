@@ -24,7 +24,7 @@ import { createBotGame } from "../runtime/gameEnv";
 import { playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { evaluateWeights, gameIDFor } from "../train/train";
-import { numArg, parseArgs, strArg } from "./args";
+import { numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -92,6 +92,7 @@ async function main(): Promise<void> {
     episodeTicks: ticks,
     decisionInterval: interval,
     reward: REWARD_V1,
+    trainingWheels: trainingWheelsArg(args, null),
     saveReplay,
     replayDir,
     log: (message) => console.log(message),

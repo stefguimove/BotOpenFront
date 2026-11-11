@@ -1,3 +1,5 @@
+import type { TrainingWheels } from "../actions/trainingWheels";
+
 /** Minimal `--key value` / `--flag` parser; no dependency. */
 export interface Args {
   [key: string]: string | boolean;
@@ -37,4 +39,20 @@ export function boolArg(args: Args, key: string, fallback = false): boolean {
   if (value === undefined) return fallback;
   if (typeof value === "boolean") return value;
   return value === "true" || value === "1";
+}
+
+/**
+ * `--training-wheels 0.2` sets an attack floor, `--training-wheels 0` or
+ * `--no-training-wheels` removes it, and no flag keeps `fallback`.
+ */
+export function trainingWheelsArg(
+  args: Args,
+  fallback: TrainingWheels | null,
+): TrainingWheels | null {
+  if (args["no-training-wheels"] === true) return null;
+  const raw = args["training-wheels"];
+  if (typeof raw !== "string") return fallback;
+  const ratio = Number(raw);
+  if (!Number.isFinite(ratio) || ratio <= 0) return null;
+  return { minTroopRatioOfCap: ratio };
 }

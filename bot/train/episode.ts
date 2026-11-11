@@ -1,4 +1,5 @@
 import type { GameConfig } from "@openfront/engine-api/Schemas";
+import type { TrainingWheels } from "../actions/trainingWheels";
 import {
   createRewardState,
   stepReward,
@@ -28,6 +29,8 @@ export interface RunEpisodeOptions {
   episodeTicks: number;
   decisionInterval: number;
   reward: RewardParams;
+  /** Attack floor used while training; `null` plays unaided. */
+  trainingWheels?: TrainingWheels | null;
 }
 
 /**
@@ -46,6 +49,7 @@ export async function runEpisode(
     weights: options.weights,
     mode: options.mode,
     seed: options.seed,
+    trainingWheels: options.trainingWheels,
   });
 
   const reward = createRewardState(0, 0);

@@ -23,7 +23,7 @@ import { createBotGame } from "../runtime/gameEnv";
 import { playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { gameIDFor } from "../train/train";
-import { boolArg, numArg, parseArgs, strArg } from "./args";
+import { boolArg, numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -34,6 +34,8 @@ async function main(): Promise<void> {
   const saveReplay = boolArg(args, "save-replay");
   const replayDir = strArg(args, "replay-dir", "records");
   const seed = numArg(args, "seed", 1);
+  // Play measures the unaided policy: no wheels unless asked for.
+  const trainingWheels = trainingWheelsArg(args, null);
   const gameID = strArg(args, "game-id", gameIDFor(seed, 1));
   const weightsPath = strArg(args, "weights", "");
 
@@ -48,6 +50,7 @@ async function main(): Promise<void> {
     weights,
     mode: "eval",
     seed,
+    trainingWheels,
   });
 
   const startMs = 1_700_000_000_000;

@@ -634,6 +634,45 @@ Propriétés :
 - il ne s'applique qu'en entraînement : `play`/`eval` ne lisent pas la
   récompense.
 
+#### 6.4.9 Roulette d'entraînement (contrainte d'action, pas de récompense)
+
+Petite roue de stabilisation, **temporaire** : tant qu'elle est active, le
+comportement `attack` n'est pas proposé au méta-contrôleur si
+`troops < 0,20 · maxTroops`. Ce n'est **pas** un terme de récompense : le
+gradient ne la voit pas, elle restreint seulement l'espace d'actions pendant
+l'apprentissage.
+
+```text
+attack disponible  ⇔  troops ≥ minTroopRatioOfCap · maxTroops   (0,20 par défaut)
+```
+
+| Point                   | Choix                                                                   |
+| ----------------------- | ----------------------------------------------------------------------- |
+| Base des 20 %           | **plafond `maxTroops`** (et non l'armée courante)                       |
+| Portée                  | **entraînement uniquement** ; `bot:play` et `bot:eval` jouent sans elle |
+| Retrait                 | `--no-training-wheels`, ou `--training-wheels 0` sur `bot:train`        |
+| Réactivation ponctuelle | `--training-wheels 0.2` sur `bot:play` / `bot:eval` pour comparer       |
+
+Code : `bot/actions/trainingWheels.ts` (`TRAINING_WHEELS`,
+`trainingWheelsAllowAttack`, `resolveTrainingWheels`), appliqué dans
+`BotAgent.applicable()`.
+
+Effet mesuré (2 parties compactes de 1 800 ticks, mode train, poids aléatoires,
+mêmes `gameID`) :
+
+| Roulette  | attaques | part de tuiles | troupes finales | `troops/maxTroops` moyen |
+| --------- | -------- | -------------- | --------------- | ------------------------ |
+| oui (0,2) | 34       | **0,0943**     | **302 122**     | **0,283**                |
+| non       | 311      | 0,0056         | 187             | 0,003                    |
+
+La roulette ne supprime pas les attaques : le bot masse jusqu'au plancher, puis
+attaque. C'est exactement le comportement qu'on veut voir émerger — et celui
+qu'il devra reproduire quand la roulette sera retirée.
+
+> Elle ne « triche » pas sur l'évaluation : `evaluateWeights` lance toujours ses
+> épisodes en mode `eval`, donc sans roulette. Le score affiché pendant
+> l'entraînement mesure la politique **sans aide**.
+
 ### 6.5 Algorithme
 
 Recommandation : **PPO** par modèle, avec les mêmes rollouts partagés.
@@ -1477,6 +1516,8 @@ au `npm ci` (le dépôt exige Node 24 dans `package.json`).
 npm run bot:bench -- --config compact --ticks 200
 npm run bot:play  -- --config compact --ticks 1800 --save-replay
 npm run bot:train -- --config compact --iterations 10 --episodes 10   # 100 parties
+npm run bot:train -- --no-training-wheels                             # sans roulette
+npm run bot:play  -- --training-wheels 0.2                            # roulette en play
 npm run bot:eval  -- --config compact --games 3 --policy scripted
 npm run bot:eval  -- --weights bot/checkpoints/latest.json --games 3
 npm run replay:api      # sert records/ sur :8787
@@ -1590,11 +1631,12 @@ et `--eval-every N` produit une ligne d'évaluation toutes les N itérations.
 Correctifs retenus après analyse d'un replay d'entraînement (le bot envoyait
 toutes ses troupes en boucle et construisait un Defense Post très tôt).
 
-| #   | Correctif                  | Fichier                      | Effet                                                                                                                                                                                                                                                         |
-| --- | -------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1  | priorité d'évaluation      | `bot/runtime/agent.ts`       | `pickBehaviour` lisait `self[19]` (troupes **sortantes**) au lieu de `self[18]`/`self[20]` (menace entrante) : en eval le bot attaquait donc à **chaque** décision. Extrait en fonction pure `evalBehaviour()` et testé.                                      |
-| P5  | porte de construction      | `bot/actions/buildPolicy.ts` | Avant le tick 1 200, seules Ville/Usine. Defense Post uniquement sous attaque entrante. Silo/SAM/bombes à partir du tick 3 000. Ports et navires toujours refusés (TheBox). Appliqué dans `buildMask()` **et** dans `chooseBuild()` (qui filtrait à la main). |
-| P6  | terme « armée trop basse » | `bot/config/reward.ts`       | §6.4.8. `stepReward()` accepte un état d'armée optionnel, alimenté par `bot/train/episode.ts`.                                                                                                                                                                |
+| #   | Correctif                  | Fichier                         | Effet                                                                                                                                                                                                                                                         |
+| --- | -------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | priorité d'évaluation      | `bot/runtime/agent.ts`          | `pickBehaviour` lisait `self[19]` (troupes **sortantes**) au lieu de `self[18]`/`self[20]` (menace entrante) : en eval le bot attaquait donc à **chaque** décision. Extrait en fonction pure `evalBehaviour()` et testé.                                      |
+| P5  | porte de construction      | `bot/actions/buildPolicy.ts`    | Avant le tick 1 200, seules Ville/Usine. Defense Post uniquement sous attaque entrante. Silo/SAM/bombes à partir du tick 3 000. Ports et navires toujours refusés (TheBox). Appliqué dans `buildMask()` **et** dans `chooseBuild()` (qui filtrait à la main). |
+| P6  | terme « armée trop basse » | `bot/config/reward.ts`          | §6.4.8. `stepReward()` accepte un état d'armée optionnel, alimenté par `bot/train/episode.ts`.                                                                                                                                                                |
+| P8  | roulette d'action          | `bot/actions/trainingWheels.ts` | §6.4.9. `attack` indisponible sous 20 % de `maxTroops`, **entraînement uniquement**. Mesuré : part de tuiles × 17, troupes × 1 600. Retirable via `--no-training-wheels`.                                                                                     |
 
 Indices nommés : `SELF_INDEX` (`bot/input/types.ts`) remplace les indices
 littéraux dans le code du bot, pour que ce type d'erreur ne puisse plus passer

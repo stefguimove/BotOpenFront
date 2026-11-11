@@ -1,6 +1,10 @@
 import type { GameConfig, Turn } from "@openfront/engine-api/Schemas";
 import fs from "fs";
 import path from "path";
+import {
+  TRAINING_WHEELS,
+  type TrainingWheels,
+} from "../actions/trainingWheels";
 import { type RewardParams, REWARD_V1 } from "../config/reward";
 import {
   EPISODE_TICKS,
@@ -69,6 +73,11 @@ export interface TrainOptions {
   seed: number;
   reinforce: ReinforceOptions;
   reward: RewardParams;
+  /**
+   * Attack floor applied during training episodes, `null` for none. Evaluation
+   * always runs without it, so the reported score is the unaided policy.
+   */
+  trainingWheels: TrainingWheels | null;
   checkpointDir: string;
   saveEvery: number;
   evalEvery: number;
@@ -100,6 +109,7 @@ export function defaultTrainOptions(
     seed: 1,
     reinforce: REINFORCE_V1,
     reward: REWARD_V1,
+    trainingWheels: TRAINING_WHEELS,
     workers: defaultWorkerCount(),
     checkpointDir: "bot/checkpoints",
     saveEvery: 5,
@@ -177,6 +187,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
           episodeTicks: options.episodeTicks,
           decisionInterval: options.decisionInterval,
           reward: options.reward,
+          trainingWheels: options.trainingWheels,
         });
       }
 
@@ -310,6 +321,8 @@ export async function evaluateWeights(
     episodeTicks: number;
     decisionInterval: number;
     reward: RewardParams;
+    /** Attack floor; omitted (or `null`) evaluates the unaided policy. */
+    trainingWheels?: TrainingWheels | null;
     saveReplay: boolean;
     replayDir: string;
     log: (message: string) => void;
@@ -328,6 +341,7 @@ export async function evaluateWeights(
       episodeTicks: options.episodeTicks,
       decisionInterval: options.decisionInterval,
       reward: options.reward,
+      trainingWheels: options.trainingWheels,
     });
     shares.push(run.result.stats.tileShare);
     rewards.push(run.steps.reduce((sum, s) => sum + s.reward, 0));

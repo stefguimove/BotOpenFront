@@ -8,6 +8,7 @@ import { REWARD_V1 } from "../config/reward";
  * Episodes run sequentially in this process (the plan's `--workers` knob is
  * `--episodes`, which batches rollouts before each update).
  */
+import { TRAINING_WHEELS } from "../actions/trainingWheels";
 import {
   compactConfig,
   targetConfig,
@@ -23,7 +24,7 @@ import {
   saveCheckpoint,
   train,
 } from "../train/train";
-import { boolArg, numArg, parseArgs, strArg } from "./args";
+import { boolArg, numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -49,7 +50,16 @@ async function main(): Promise<void> {
       entropy: numArg(args, "entropy", REINFORCE_V1.entropy),
     },
     reward: REWARD_V1,
+    trainingWheels: trainingWheelsArg(args, TRAINING_WHEELS),
   });
+
+  console.log(
+    options.trainingWheels === null
+      ? "training wheels off: the bot attacks whenever it wants"
+      : `training wheels: no attack below ${
+          options.trainingWheels.minTroopRatioOfCap * 100
+        }% of maxTroops (evaluation plays unaided)`,
+  );
 
   const startedFrom = resume !== "" ? loadCheckpoint(resume) : null;
   if (startedFrom !== null) {
