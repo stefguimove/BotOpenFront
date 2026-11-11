@@ -8,6 +8,7 @@ import fs from "fs";
  * With `--save-replay`, the record lands in `records/<gameID>.json`; open
  * `http://localhost:9000/#replay-viewer=<gameID>` after `npm run replay:api`.
  */
+import { ATTACK_POLICY } from "../actions/attackPolicy";
 import {
   EPISODE_TICKS,
   DECISION_INTERVAL,
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
   const seed = numArg(args, "seed", 1);
   const gameID = strArg(args, "game-id", gameIDFor(seed, 1));
   const weightsPath = strArg(args, "weights", "");
+  const reserve = numArg(args, "reserve", ATTACK_POLICY.reserve);
 
   const weights =
     weightsPath !== "" && fs.existsSync(weightsPath)
@@ -48,6 +50,7 @@ async function main(): Promise<void> {
     weights,
     mode: "eval",
     seed,
+    reserve,
   });
 
   const startMs = 1_700_000_000_000;

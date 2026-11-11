@@ -29,6 +29,16 @@ export interface RewardParams {
   wEndMaxTroops: number;
   /** Terminal weight on a win (0 for 3-minute episodes). */
   wWin: number;
+  /**
+   * Per-decision penalty when the standing army is below `lowArmyRatio` of the
+   * cap. Without it, dumping every troop is free, and the policy learns to
+   * chain attacks forever without ever holding ground.
+   */
+  cLowArmy: number;
+  /** Army floor, as a fraction of maxTroops. */
+  lowArmyRatio: number;
+  /** Maximum total low-army penalty per episode. */
+  lowArmyCap: number;
   /** maxTroops reference for the terminal normalization. */
   maxTroopsRef: number;
   /** Per-decision clip. */
@@ -53,6 +63,12 @@ export const REWARD_V1: RewardParams = {
   wEndTiles: 1,
   wEndMaxTroops: 0.5,
   wWin: 0,
+  // Calibrated against the tile term: an episode gains ~1e4 tiles ≈ 10 reward,
+  // so a capped low-army penalty of 1 (~10 % of it) is noticeable but cannot
+  // dominate. At 0.002/cap 0.2 the signal was lost in the noise.
+  cLowArmy: 0.005,
+  lowArmyRatio: 0.05,
+  lowArmyCap: 1,
   maxTroopsRef: 100_000,
   clip: 1,
   gamma: 1,
@@ -65,8 +81,20 @@ export interface RewardState {
   stagnantRun: number;
   stagnantDecisions: number;
   stagnationPenalty: number;
+  lowArmyPenalty: number;
   total: number;
-  components: { gold: number; tiles: number; stagnation: number };
+  components: {
+    gold: number;
+    tiles: number;
+    stagnation: number;
+    lowArmy: number;
+  };
+}
+
+/** Standing army, used by the low-army penalty. */
+export interface ArmyState {
+  troops: number;
+  maxTroops: number;
 }
 
 export function createRewardState(
@@ -80,8 +108,9 @@ export function createRewardState(
     stagnantRun: 0,
     stagnantDecisions: 0,
     stagnationPenalty: 0,
+    lowArmyPenalty: 0,
     total: 0,
-    components: { gold: 0, tiles: 0, stagnation: 0 },
+    components: { gold: 0, tiles: 0, stagnation: 0, lowArmy: 0 },
   };
 }
 
@@ -103,7 +132,30 @@ export interface RewardStep {
   gold: number;
   tiles: number;
   stagnation: number;
+  lowArmy: number;
   stagnant: boolean;
+}
+
+/**
+ * Penalty proportional to how far the army sits below the floor. Zero when the
+ * army is healthy or unknown, and total-bounded so it can never dominate the
+ * tile and gold terms.
+ */
+function lowArmyPenalty(
+  state: RewardState,
+  params: RewardParams,
+  army: ArmyState | undefined,
+): number {
+  if (army === undefined || params.cLowArmy <= 0) return 0;
+  const maxTroops = safe(army.maxTroops);
+  const ratio = maxTroops > 0 ? safe(army.troops) / maxTroops : 1;
+  if (!(ratio < params.lowArmyRatio)) return 0;
+  const room = params.lowArmyCap - state.lowArmyPenalty;
+  if (room <= 0) return 0;
+  const deficit = (params.lowArmyRatio - ratio) / params.lowArmyRatio;
+  const penalty = Math.min(room, params.cLowArmy * deficit);
+  state.lowArmyPenalty += penalty;
+  return -penalty;
 }
 
 /**
@@ -115,6 +167,7 @@ export function stepReward(
   params: RewardParams,
   goldEarned: number,
   tiles: number,
+  army?: ArmyState,
 ): RewardStep {
   const nextPotential = potentialOf(goldEarned, params);
   const goldReward = params.gamma * nextPotential - state.potential;
@@ -138,7 +191,9 @@ export function stepReward(
     state.stagnationPenalty += params.cStag;
   }
 
-  const raw = goldReward + tileReward + stagnationReward;
+  const lowArmyReward = lowArmyPenalty(state, params, army);
+
+  const raw = goldReward + tileReward + stagnationReward + lowArmyReward;
   const reward = clip(raw, params.clip);
 
   state.potential = nextPotential;
@@ -148,12 +203,14 @@ export function stepReward(
   state.components.gold += goldReward;
   state.components.tiles += tileReward;
   state.components.stagnation += stagnationReward;
+  state.components.lowArmy += lowArmyReward;
 
   return {
     reward,
     gold: goldReward,
     tiles: tileReward,
     stagnation: stagnationReward,
+    lowArmy: lowArmyReward,
     stagnant,
   };
 }

@@ -1,6 +1,7 @@
 import { UnitType } from "@openfront/engine-api/game/GameTypes";
 import type { StampedIntent } from "@openfront/engine-api/Schemas";
 import type { Game, Player } from "@openfront/engine/game/Game";
+import { ATTACK_POLICY, attackAllowed } from "../actions/attackPolicy";
 import { due, type Behaviour } from "../actions/cadence";
 import {
   allianceExtensionIntent,
@@ -26,6 +27,7 @@ import {
   DIPLOMACY_ACTIONS,
   NOOP_ACTION,
   RATIO_BUCKETS,
+  SELF_INDEX,
   type Observation,
 } from "../input/types";
 import { mlpForward, makeRng, type Rng } from "../models/mlp";
@@ -55,6 +57,8 @@ export interface BotAgentOptions {
   weights: AgentWeights;
   mode?: AgentMode;
   seed?: number;
+  /** Fraction of maxTroops to hold before attacking (see `ATTACK_POLICY`). */
+  reserve?: number;
 }
 
 /**
@@ -70,6 +74,7 @@ export class BotAgent implements Agent {
   private readonly clientID: string;
   private readonly weights: AgentWeights;
   private readonly mode: AgentMode;
+  private readonly reserve: number;
   private readonly rng: Rng;
   private memory: ObservationMemory = createObservationMemory();
   /** Decisions sampled on the last `decide()`, in order. */
@@ -79,6 +84,7 @@ export class BotAgent implements Agent {
     this.clientID = options.clientID;
     this.weights = options.weights;
     this.mode = options.mode ?? "eval";
+    this.reserve = options.reserve ?? ATTACK_POLICY.reserve;
     this.rng = makeRng(options.seed ?? 1234);
   }
 
@@ -98,7 +104,12 @@ export class BotAgent implements Agent {
     const cancel = this.maybeCancel(player);
     if (cancel !== null) intents.push(cancel);
 
-    const options = this.applicable(obs, tick);
+    const options = this.applicable(
+      obs,
+      tick,
+      player,
+      game.config().maxTroops(player),
+    );
     if (options.length === 0) return intents;
 
     const behaviour = this.pickBehaviour(options, obs);
@@ -122,9 +133,18 @@ export class BotAgent implements Agent {
     return null;
   }
 
-  private applicable(obs: Observation, tick: number): Behaviour[] {
+  private applicable(
+    obs: Observation,
+    tick: number,
+    player: Player,
+    maxTroops: number,
+  ): Behaviour[] {
     const options: Behaviour[] = [];
-    if (due("attack", tick) && attackTargets(obs).length > 0) {
+    if (
+      due("attack", tick) &&
+      attackTargets(obs).length > 0 &&
+      attackAllowed(Number(player.troops()), maxTroops, this.reserve)
+    ) {
       options.push("attack");
     }
     if (due("build", tick) && buildMask(obs).some(Boolean)) {
@@ -150,19 +170,7 @@ export class BotAgent implements Agent {
       );
       return options[index];
     }
-    // Eval priority: answer an incoming attack, then diplomacy, then the
-    // economy, then expand.
-    if (options.includes("attack") && obs.self[19] > 0) return "attack";
-    if (
-      options.includes("diplomacy") &&
-      obs.opponents.some((o) => o.canRejectAlliance)
-    ) {
-      return "diplomacy";
-    }
-    if (options.includes("build")) return "build";
-    if (options.includes("upgrade")) return "upgrade";
-    if (options.includes("attack")) return "attack";
-    return options[0];
+    return evalBehaviour(options, obs);
   }
 
   private runBehaviour(
@@ -253,11 +261,11 @@ export class BotAgent implements Agent {
     player: Player,
     game: Game,
   ): StampedIntent | null {
+    // Go through `buildMask` so the v1 build gate is always applied.
+    const allowed = buildMask(obs);
     const candidates = obs.builds
       .map((option, index) => ({ option, index }))
-      .filter(
-        ({ option }) => option.allowed && option.affordable && option.ready,
-      );
+      .filter(({ index }) => allowed[index]);
     if (candidates.length === 0) return null;
 
     const preferred = this.preferredNukeTile(obs, game);
@@ -396,3 +404,32 @@ export const V1_FORBIDDEN_BUILDS: readonly UnitType[] = [
   UnitType.TradeShip,
   UnitType.TransportShip,
 ];
+
+/**
+ * Eval-mode behaviour priority: answer an incoming attack, then diplomacy,
+ * then the economy, then expand.
+ *
+ * `incomingAttacks` is the threat signal — reading `outgoingTroops` here (an
+ * earlier bug) made the bot attack on every single decision, because it almost
+ * always has an attack in flight.
+ */
+export function evalBehaviour(
+  options: readonly Behaviour[],
+  obs: Observation,
+): Behaviour {
+  const underAttack =
+    (obs.self[SELF_INDEX.incomingAttacks] ?? 0) > 0 ||
+    (obs.self[SELF_INDEX.incomingTroops] ?? 0) > 0;
+
+  if (options.includes("attack") && underAttack) return "attack";
+  if (
+    options.includes("diplomacy") &&
+    obs.opponents.some((o) => o.canRejectAlliance)
+  ) {
+    return "diplomacy";
+  }
+  if (options.includes("build")) return "build";
+  if (options.includes("upgrade")) return "upgrade";
+  if (options.includes("attack")) return "attack";
+  return options[0];
+}

@@ -28,6 +28,8 @@ export interface RunEpisodeOptions {
   episodeTicks: number;
   decisionInterval: number;
   reward: RewardParams;
+  /** Fraction of maxTroops to hold before attacking; see `ATTACK_POLICY`. */
+  reserve?: number;
 }
 
 /**
@@ -46,6 +48,7 @@ export async function runEpisode(
     weights: options.weights,
     mode: options.mode,
     seed: options.seed,
+    reserve: options.reserve,
   });
 
   const reward = createRewardState(0, 0);
@@ -70,7 +73,10 @@ export async function runEpisode(
           initialised = true;
           return;
         }
-        const step = stepReward(reward, options.reward, goldEarned, tiles);
+        const step = stepReward(reward, options.reward, goldEarned, tiles, {
+          troops: Number(me.troops()),
+          maxTroops: g.config().maxTroops(me),
+        });
         for (const record of decisions) {
           steps.push({
             record,

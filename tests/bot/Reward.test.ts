@@ -122,3 +122,58 @@ describe("terminalReward", () => {
     expect(terminalReward(REWARD_V1, 0, 0, 0, false).tiles).toBe(0);
   });
 });
+
+describe("low-army penalty", () => {
+  test("costs nothing while the army is healthy", () => {
+    const state = createRewardState(0, 1_000);
+    const step = stepReward(state, REWARD_V1, 0, 1_000, {
+      troops: 50_000,
+      maxTroops: 100_000,
+    });
+    expect(step.lowArmy).toBe(0);
+    expect(state.lowArmyPenalty).toBe(0);
+  });
+
+  test("costs nothing when the army state is unknown", () => {
+    const state = createRewardState(0, 1_000);
+    expect(stepReward(state, REWARD_V1, 0, 1_000).lowArmy).toBe(0);
+  });
+
+  test("punishes an empty army proportionally to the deficit", () => {
+    const small = createRewardState(0, 1_000);
+    const empty = createRewardState(0, 1_000);
+    // Floor is 5% of 100k = 5k; 4k is a 20% deficit, 0 is a full one.
+    const part = stepReward(small, REWARD_V1, 0, 1_000, {
+      troops: 4_000,
+      maxTroops: 100_000,
+    });
+    const full = stepReward(empty, REWARD_V1, 0, 1_000, {
+      troops: 0,
+      maxTroops: 100_000,
+    });
+    expect(part.lowArmy).toBeLessThan(0);
+    expect(full.lowArmy).toBeLessThan(part.lowArmy);
+    expect(full.lowArmy).toBeCloseTo(-REWARD_V1.cLowArmy, 10);
+  });
+
+  test("is bounded by the episode cap", () => {
+    const state = createRewardState(0, 1_000);
+    for (let i = 0; i < 10_000; i++) {
+      stepReward(state, REWARD_V1, 0, 1_000, { troops: 0, maxTroops: 100_000 });
+    }
+    expect(state.lowArmyPenalty).toBeLessThanOrEqual(
+      REWARD_V1.lowArmyCap + 1e-12,
+    );
+  });
+
+  test("stays small next to the tile term", () => {
+    // A 10-tile gain must still outweigh a full low-army penalty, otherwise
+    // the policy would be paid to sit still.
+    const state = createRewardState(0, 1_000);
+    const step = stepReward(state, REWARD_V1, 0, 1_010, {
+      troops: 0,
+      maxTroops: 100_000,
+    });
+    expect(step.tiles + step.lowArmy).toBeGreaterThan(0);
+  });
+});

@@ -8,6 +8,7 @@ import { REWARD_V1 } from "../config/reward";
  * Episodes run sequentially in this process (the plan's `--workers` knob is
  * `--episodes`, which batches rollouts before each update).
  */
+import { ATTACK_POLICY } from "../actions/attackPolicy";
 import {
   compactConfig,
   targetConfig,
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
       entropy: numArg(args, "entropy", REINFORCE_V1.entropy),
     },
     reward: REWARD_V1,
+    reserve: numArg(args, "reserve", ATTACK_POLICY.reserve),
   });
 
   const startedFrom = resume !== "" ? loadCheckpoint(resume) : null;
@@ -73,6 +75,7 @@ async function main(): Promise<void> {
     episodeTicks: options.episodeTicks,
     decisionInterval: options.decisionInterval,
     reward: options.reward,
+    reserve: options.reserve,
     saveReplay: options.saveReplayBest,
     replayDir: options.replayDir,
     log: (message) => console.log(message),

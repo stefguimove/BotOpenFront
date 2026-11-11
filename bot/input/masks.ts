@@ -1,4 +1,5 @@
-import { RATIO_BUCKETS, type Observation } from "./types";
+import { buildGateAllows } from "../actions/buildPolicy";
+import { RATIO_BUCKETS, SELF_INDEX, type Observation } from "./types";
 
 /**
  * A legal attack target. `playerID === null` is TerraNullius, which the
@@ -31,14 +32,18 @@ export function attackTargets(obs: Observation): AttackTarget[] {
 
 /** Ratio buckets the bot can afford. All of them when it has any troops. */
 export function ratioMask(obs: Observation): boolean[] {
-  const troops = obs.self[2] ?? 0; // log-scaled troops; > 0 means non-empty
+  const troops = obs.self[SELF_INDEX.troops] ?? 0; // > 0 means non-empty
   return RATIO_BUCKETS.map(() => troops > 0);
 }
 
 /** Build options that are legal and affordable. */
 export function buildMask(obs: Observation): boolean[] {
   return obs.builds.map(
-    (option) => option.allowed && option.affordable && option.ready,
+    (option) =>
+      option.allowed &&
+      option.affordable &&
+      option.ready &&
+      buildGateAllows(option.unitType, obs),
   );
 }
 

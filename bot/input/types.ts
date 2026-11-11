@@ -11,6 +11,41 @@ export const MAX_PLAYER_SLOTS = 16;
 /** Self vector size (see features.selfFeatures). */
 export const SELF_DIM = 27;
 
+/**
+ * Named offsets into the self vector. `selfFeatures` writes them in this
+ * order; read them by name so an index cannot silently drift (an earlier bug
+ * read `outgoingTroops` where `incomingTroops` was meant).
+ */
+export const SELF_INDEX = {
+  tick: 0,
+  inSpawnPhase: 1,
+  troops: 2,
+  maxTroops: 3,
+  troopRatio: 4,
+  gold: 5,
+  goldEarned: 6,
+  goldRate: 7,
+  tileRate: 8,
+  tiles: 9,
+  tileShare: 10,
+  winGap: 11,
+  cities: 12,
+  factories: 13,
+  silos: 14,
+  sams: 15,
+  defensePosts: 16,
+  structures: 17,
+  incomingTroops: 18,
+  outgoingTroops: 19,
+  incomingAttacks: 20,
+  outgoingAttacks: 21,
+  allies: 22,
+  peakRatio: 23,
+  traitor: 24,
+  doomsday: 25,
+  overtime: 26,
+} as const;
+
 export const STRUCTURE_FEATURE_DIM = 6;
 export const MAX_STRUCTURE_SLOTS = 16;
 

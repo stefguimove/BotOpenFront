@@ -1,6 +1,7 @@
 import type { GameConfig, Turn } from "@openfront/engine-api/Schemas";
 import fs from "fs";
 import path from "path";
+import { ATTACK_POLICY } from "../actions/attackPolicy";
 import { type RewardParams, REWARD_V1 } from "../config/reward";
 import {
   EPISODE_TICKS,
@@ -69,6 +70,8 @@ export interface TrainOptions {
   seed: number;
   reinforce: ReinforceOptions;
   reward: RewardParams;
+  /** Fraction of maxTroops to hold before attacking. */
+  reserve: number;
   checkpointDir: string;
   saveEvery: number;
   evalEvery: number;
@@ -100,6 +103,7 @@ export function defaultTrainOptions(
     seed: 1,
     reinforce: REINFORCE_V1,
     reward: REWARD_V1,
+    reserve: ATTACK_POLICY.reserve,
     workers: defaultWorkerCount(),
     checkpointDir: "bot/checkpoints",
     saveEvery: 5,
@@ -244,6 +248,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
           episodeTicks: options.episodeTicks,
           decisionInterval: options.decisionInterval,
           reward: options.reward,
+          reserve: options.reserve,
           saveReplay: false,
           replayDir: options.replayDir,
           log: () => {},
@@ -310,6 +315,8 @@ export async function evaluateWeights(
     episodeTicks: number;
     decisionInterval: number;
     reward: RewardParams;
+    /** Fraction of maxTroops to hold before attacking. */
+    reserve: number;
     saveReplay: boolean;
     replayDir: string;
     log: (message: string) => void;
@@ -328,6 +335,7 @@ export async function evaluateWeights(
       episodeTicks: options.episodeTicks,
       decisionInterval: options.decisionInterval,
       reward: options.reward,
+      reserve: options.reserve,
     });
     shares.push(run.result.stats.tileShare);
     rewards.push(run.steps.reduce((sum, s) => sum + s.reward, 0));

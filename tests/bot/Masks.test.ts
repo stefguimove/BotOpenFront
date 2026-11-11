@@ -8,7 +8,7 @@ import {
   ratioMask,
   upgradeMask,
 } from "../../bot/input/masks";
-import { RATIO_BUCKETS } from "../../bot/input/types";
+import { RATIO_BUCKETS, SELF_INDEX } from "../../bot/input/types";
 import { buildOption, observation, opponent, structure } from "./fixtures";
 
 describe("attackTargets", () => {
@@ -36,6 +36,35 @@ describe("attackTargets", () => {
 
   test("is empty with no legal target", () => {
     expect(attackTargets(observation())).toHaveLength(0);
+  });
+});
+
+describe("buildMask", () => {
+  test("requires allowed, affordable and ready", () => {
+    const obs = observation({
+      builds: [
+        buildOption(UnitType.City),
+        buildOption(UnitType.City, { affordable: false }),
+        buildOption(UnitType.City, { allowed: false }),
+        buildOption(UnitType.City, { ready: false }),
+      ],
+    });
+    expect(buildMask(obs)).toEqual([true, false, false, false]);
+  });
+
+  test("drops a Defense Post when nothing attacks", () => {
+    const obs = observation({
+      builds: [buildOption(UnitType.DefensePost), buildOption(UnitType.City)],
+    });
+    expect(buildMask(obs)).toEqual([false, true]);
+  });
+
+  test("keeps a Defense Post once an attack is incoming", () => {
+    const obs = observation({
+      builds: [buildOption(UnitType.DefensePost), buildOption(UnitType.City)],
+    });
+    obs.self[SELF_INDEX.incomingAttacks] = 1;
+    expect(buildMask(obs)).toEqual([true, true]);
   });
 });
 

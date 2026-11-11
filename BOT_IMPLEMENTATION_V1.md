@@ -599,6 +599,45 @@ Avant de lancer PPO :
 Sans cette calibration, le bot peut apprendre à maximiser un seul terme
 (par exemple construire des villes pour `maxTroops`) au détriment du jeu.
 
+#### 6.4.8 Terme « armée trop basse »
+
+Diagnostic d'un entraînement réel : le bot enchaîne une attaque **toutes les
+secondes** avec 75 % de ses troupes, donc son armée ne dépasse jamais ~250
+hommes alors que son plafond est de ~800 000. Il ne masse jamais, ses attaques
+ne percent pas, et il n'avance plus. Rien dans la récompense ne punissait cet
+état, l'attaque était donc gratuite.
+
+Terme ajouté (`bot/config/reward.ts`) :
+
+```text
+floor = lowArmyRatio · maxTroops
+si troops < floor :
+    déficit   = (floor − troops) / floor          ∈ ]0, 1]
+    r_low(t)  = −c_low · déficit                  (cumul plafonné à lowArmyCap)
+sinon :
+    r_low(t)  = 0
+```
+
+| Paramètre      | Valeur | Rôle                                     |
+| -------------- | ------ | ---------------------------------------- |
+| `c_low`        | 0,005  | pénalité par décision au déficit maximal |
+| `lowArmyRatio` | 0,05   | plancher d'armée, en fraction du plafond |
+| `lowArmyCap`   | 1,0    | cumul maximal par épisode                |
+
+Calibration : un épisode gagne ~10⁴ tuiles, soit ≈ 10 de récompense de tuile ;
+un plafond de 1,0 représente ~10 % de ce signal — visible pour l'apprentissage,
+incapable de dominer. La première valeur essayée (0,002 / plafond 0,2) était
+noyée dans le bruit.
+
+Propriétés :
+
+- le terme est **nul** quand l'armée est saine ou quand `maxTroops` est
+  inconnu : les tests existants ne changent pas ;
+- il n'est **pas** potential-based, comme la stagnation : c'est une préférence
+  explicite (« garde une armée »), volontairement plafonnée ;
+- il ne s'applique qu'en entraînement : `play`/`eval` ne lisent pas la
+  récompense.
+
 ### 6.5 Algorithme
 
 Recommandation : **PPO** par modèle, avec les mêmes rollouts partagés.
@@ -1450,30 +1489,36 @@ npm run start:client    # viewer sur http://localhost:9000/#replay-viewer=<gameI
 `--config target` = TheBox 2048² (config cible) ; `--config compact` = 1024²
 (curriculum/entraînement).
 
+`--reserve R` (défaut 0,3) est la fraction de `maxTroops` que le bot doit
+détenir avant d'attaquer (§21.8, P2). `--reserve 0` rétablit l'ancien
+comportement, où l'attaque est disponible à chaque décision.
+
 ### 21.2 Fichiers
 
-| Module                    | Rôle                                                         |
-| ------------------------- | ------------------------------------------------------------ |
-| `bot/config/target.ts`    | config cible, `clientID`, horizon 1800 ticks                 |
-| `bot/config/reward.ts`    | reward v1 (potential or, delta tuiles, stagnation, terminal) |
-| `bot/input/types.ts`      | dimensions et structures d'observation                       |
-| `bot/input/features.ts`   | `self` (27) et 6 features par adversaire                     |
-| `bot/input/candidates.ts` | sélection déterministe des 16 slots                          |
-| `bot/input/masks.ts`      | masques de légalité (attaques, builds, upgrades, diplomatie) |
-| `bot/input/encode.ts`     | tenseurs fixes                                               |
-| `bot/models/mlp.ts`       | MLP forward/backward pur TypeScript                          |
-| `bot/models/policy.ts`    | softmax masqué, échantillonnage, gradient de politique       |
-| `bot/models/weights.ts`   | dimensions, checkpoints JSON                                 |
-| `bot/runtime/observe.ts`  | `Game` → `Observation`                                       |
-| `bot/runtime/agent.ts`    | 4 comportements + méta-contrôleur par règles                 |
-| `bot/runtime/gameEnv.ts`  | `GameRunner` local + cache de carte                          |
-| `bot/runtime/loop.ts`     | boucle de ticks, hashes par tour                             |
-| `bot/runtime/record.ts`   | `GameRecord` + écriture `records/`                           |
-| `bot/actions/*`           | intents, heuristique de tuile, validation, cadence           |
-| `bot/train/reinforce.ts`  | retours, accumulation de gradients                           |
-| `bot/train/train.ts`      | boucle d'entraînement, checkpoints, évaluation               |
-| `bot/eval/baselines.ts`   | agents aléatoire et scripté                                  |
-| `bot/cli/*`               | `bench`, `play`, `train`, `eval`                             |
+| Module                        | Rôle                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `bot/config/target.ts`        | config cible, `clientID`, horizon 1800 ticks                              |
+| `bot/config/reward.ts`        | reward v1 (potential or, delta tuiles, stagnation, armée basse, terminal) |
+| `bot/actions/attackPolicy.ts` | réserve de troupes avant attaque (§21.8)                                  |
+| `bot/actions/buildPolicy.ts`  | porte de construction v1 (§21.8)                                          |
+| `bot/input/types.ts`          | dimensions et structures d'observation                                    |
+| `bot/input/features.ts`       | `self` (27) et 6 features par adversaire                                  |
+| `bot/input/candidates.ts`     | sélection déterministe des 16 slots                                       |
+| `bot/input/masks.ts`          | masques de légalité (attaques, builds, upgrades, diplomatie)              |
+| `bot/input/encode.ts`         | tenseurs fixes                                                            |
+| `bot/models/mlp.ts`           | MLP forward/backward pur TypeScript                                       |
+| `bot/models/policy.ts`        | softmax masqué, échantillonnage, gradient de politique                    |
+| `bot/models/weights.ts`       | dimensions, checkpoints JSON                                              |
+| `bot/runtime/observe.ts`      | `Game` → `Observation`                                                    |
+| `bot/runtime/agent.ts`        | 4 comportements + méta-contrôleur par règles                              |
+| `bot/runtime/gameEnv.ts`      | `GameRunner` local + cache de carte                                       |
+| `bot/runtime/loop.ts`         | boucle de ticks, hashes par tour                                          |
+| `bot/runtime/record.ts`       | `GameRecord` + écriture `records/`                                        |
+| `bot/actions/*`               | intents, heuristique de tuile, validation, cadence                        |
+| `bot/train/reinforce.ts`      | retours, accumulation de gradients                                        |
+| `bot/train/train.ts`          | boucle d'entraînement, checkpoints, évaluation                            |
+| `bot/eval/baselines.ts`       | agents aléatoire et scripté                                               |
+| `bot/cli/*`                   | `bench`, `play`, `train`, `eval`                                          |
 
 ### 21.3 Mesures relevées
 
@@ -1489,21 +1534,23 @@ npm run start:client    # viewer sur http://localhost:9000/#replay-viewer=<gameI
 
 `tests/bot/` couvre :
 
-| Fichier              | Couverture                                                    |
-| -------------------- | ------------------------------------------------------------- |
-| `Features.test.ts`   | dimensions, bornes, absence de NaN                            |
-| `Candidates.test.ts` | sélection déterministe, top-5, cap, distance                  |
-| `Masks.test.ts`      | légalité, TerraNullius, tribus exclues des alliances          |
-| `Mlp.test.ts`        | gradient analytique vs numérique, déterminisme                |
-| `Policy.test.ts`     | softmax masqué, échantillonnage, gradient                     |
-| `Weights.test.ts`    | dimensions, < 10 k paramètres, round-trip checkpoint          |
-| `Reward.test.ts`     | potential, symétrie, stagnation, terminal                     |
-| `Actions.test.ts`    | cadence et construction des intents                           |
-| `GameEnv.test.ts`    | composition 13 acteurs, spawns différents, carte non partagée |
-| `Play.test.ts`       | ticks, hashes, déterminisme, record valide                    |
-| `Validate.test.ts`   | rejet des intents illégaux                                    |
-| `Train.test.ts`      | retours, mise à jour, checkpoints, boucle complète            |
-| `Replay.test.ts`     | re-simulation d'un record avec hashes identiques              |
+| Fichier                 | Couverture                                                     |
+| ----------------------- | -------------------------------------------------------------- |
+| `Features.test.ts`      | dimensions, bornes, absence de NaN                             |
+| `Candidates.test.ts`    | sélection déterministe, top-5, cap, distance                   |
+| `Masks.test.ts`         | légalité, TerraNullius, tribus exclues des alliances           |
+| `Mlp.test.ts`           | gradient analytique vs numérique, déterminisme                 |
+| `Policy.test.ts`        | softmax masqué, échantillonnage, gradient                      |
+| `Weights.test.ts`       | dimensions, < 10 k paramètres, round-trip checkpoint           |
+| `Reward.test.ts`        | potential, symétrie, stagnation, armée basse, terminal         |
+| `Actions.test.ts`       | cadence et construction des intents                            |
+| `GameEnv.test.ts`       | composition 13 acteurs, spawns différents, carte non partagée  |
+| `Play.test.ts`          | ticks, hashes, déterminisme, record valide                     |
+| `Validate.test.ts`      | rejet des intents illégaux                                     |
+| `Train.test.ts`         | retours, mise à jour, checkpoints, boucle complète             |
+| `Replay.test.ts`        | re-simulation d'un record avec hashes identiques               |
+| `BuildPolicy.test.ts`   | porte de construction (économie, Defense Post, nukes, navires) |
+| `EvalBehaviour.test.ts` | priorité d'évaluation (menace entrante, pas sortante)          |
 
 ```bash
 npx vitest run tests/bot --project node
@@ -1545,3 +1592,62 @@ monter sur une machine mieux dotée.
 `--resume <checkpoint>` reprend **réellement** les poids (et non plus seulement
 l'affichage), continue la numérotation des itérations et la séquence de parties,
 et `--eval-every N` produit une ligne d'évaluation toutes les N itérations.
+
+### 21.8 Correctifs comportementaux (boucle d'attaque, Defense Post)
+
+Trois correctifs retenus après analyse d'un replay d'entraînement (le bot
+envoyait toutes ses troupes en boucle et construisait un Defense Post très tôt).
+
+| #   | Correctif                  | Fichier                      | Effet                                                                                                                                                                                                                                                         |
+| --- | -------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | priorité d'évaluation      | `bot/runtime/agent.ts`       | `pickBehaviour` lisait `self[19]` (troupes **sortantes**) au lieu de `self[18]`/`self[20]` (menace entrante) : en eval le bot attaquait donc à **chaque** décision. Extrait en fonction pure `evalBehaviour()` et testé.                                      |
+| P5  | porte de construction      | `bot/actions/buildPolicy.ts` | Avant le tick 1 200, seules Ville/Usine. Defense Post uniquement sous attaque entrante. Silo/SAM/bombes à partir du tick 3 000. Ports et navires toujours refusés (TheBox). Appliqué dans `buildMask()` **et** dans `chooseBuild()` (qui filtrait à la main). |
+| P6  | terme « armée trop basse » | `bot/config/reward.ts`       | §6.4.8. `stepReward()` accepte un état d'armée optionnel, alimenté par `bot/train/episode.ts`.                                                                                                                                                                |
+
+Indices nommés : `SELF_INDEX` (`bot/input/types.ts`) remplace les indices
+littéraux dans le code du bot, pour que ce type d'erreur ne puisse plus passer
+inaperçu.
+
+Mesure après correctifs (3 parties compactes, 3 600 ticks, poids aléatoires
+`createWeights(1)`, mode eval, mêmes `gameID`) :
+
+| Métrique         | Avant      | P1+P5+P6   | **P1+P2+P5+P6** |
+| ---------------- | ---------- | ---------- | --------------- |
+| part de tuiles   | 0,00637    | 0,00641    | **0,576**       |
+| troupes moyennes | 902        | 870        | **1 498 182**   |
+| `peakTroops`     | 27 692     | 27 692     | **2 814 347**   |
+| `attack`         | 99 % (911) | 99 % (910) | **86 % (128)**  |
+| `build_unit`     | 1 % (7)    | 1 % (8)    | **10 % (15)**   |
+| morts            | 1/3        | 1/3        | **0/3**         |
+
+#### P2 — réserve de troupes (le correctif décisif)
+
+La boucle d'attaque ne vient pas d'un bug mais de la **cadence combinée au
+ratio** : l'attaque est due toutes les 10 ticks, `RATIO_BUCKETS` inclut 1,0, et
+rien n'impose de garder une armée. L'équilibre atteint est
+`troupes ≈ régénération × 10 / ratio ≈ 250`, alors que le plafond est de
+~800 000 : le bot « envoie tout en boucle » et ses attaques ne percent jamais.
+
+`bot/actions/attackPolicy.ts` interdit le comportement `attack` tant que
+`troops < reserve · maxTroops` (défaut **0,3**). La règle s'applique aux deux
+modes (`train` et `eval`) et vit dans `applicable()` : quand l'attaque est
+indisponible, le méta-contrôleur choisit `build`/`upgrade`/`diplomacy` à la
+place, donc l'entraînement voit aussi plus de constructions.
+
+Balayage de la réserve (3 parties, 3 600 ticks) :
+
+| `reserve` | part de tuiles | troupes moy.  |
+| --------- | -------------- | ------------- |
+| 0         | 0,0064         | 902           |
+| 0,05      | 0,105          | 87 526        |
+| 0,1       | 0,221          | 346 863       |
+| 0,2       | 0,429          | 720 314       |
+| **0,3**   | **0,576**      | **1 498 182** |
+| 0,5       | 0,526          | 2 985 995     |
+
+0,3 est le meilleur compromis mesuré ; 0,5 accumule plus de troupes mais
+conquiert moins.
+
+Les correctifs non retenus restent P3 (ratio plafonné à 0,5 hors défense), P4
+(pas de ré-attaque d'une cible déjà attaquée) et P7 (biais initial vers 0,2).
+Ils ne sont plus prioritaires : P2 suffit à faire dominer le bot.
