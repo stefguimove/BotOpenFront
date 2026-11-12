@@ -26,6 +26,7 @@ import {
   greedyArg,
   numArg,
   parseArgs,
+  seedArg,
   strArg,
   trainingWheelsArg,
 } from "./args";
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
   const interval = numArg(args, "decision-interval", DECISION_INTERVAL);
   const saveReplay = boolArg(args, "save-replay");
   const replayDir = strArg(args, "replay-dir", "records");
-  const seed = numArg(args, "seed", 1);
+  const seed = seedArg(args);
   // Play measures the unaided policy: no wheels unless asked for.
   const trainingWheels = trainingWheelsArg(args, null);
   const gameID = strArg(args, "game-id", gameIDFor(seed, 1));
@@ -71,9 +72,9 @@ async function main(): Promise<void> {
 
   const stats = result.stats;
   console.log(
-    `game=${gameID} ticks=${stats.ticks} decisions=${stats.decisions} ` +
-      `intents=${stats.intents} weights=${weightsSource} ` +
-      `fp=${weightsFingerprint(weights)}`,
+    `seed=${seed} game=${gameID} ticks=${stats.ticks} ` +
+      `decisions=${stats.decisions} intents=${stats.intents} ` +
+      `weights=${weightsSource} fp=${weightsFingerprint(weights)}`,
   );
   console.log(
     `alive=${stats.alive} winner=${stats.winner} tiles=${stats.tiles} ` +

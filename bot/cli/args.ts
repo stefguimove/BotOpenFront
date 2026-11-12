@@ -72,3 +72,19 @@ export function trainingWheelsArg(
 export function greedyArg(args: Args, fallback = false): boolean {
   return boolArg(args, "greedy", fallback);
 }
+
+/**
+ * `--seed` as a number, or `random` for a fresh one.
+ *
+ * Without it every run of `bot:play` uses seed 1, i.e. the *same* map, the same
+ * spawns and the same agent RNG, so the game is bit-identical by design and two
+ * runs cannot be compared. `--seed random` varies the scenario; passing a number
+ * keeps runs reproducible.
+ */
+export function seedArg(args: Args, fallback = 1): number {
+  const raw = args["seed"];
+  if (typeof raw !== "string") return fallback;
+  if (raw === "random") return Math.floor(Math.random() * 1_000_000_000);
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
