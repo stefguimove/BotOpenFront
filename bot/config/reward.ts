@@ -112,22 +112,29 @@ export const REWARD_V2: RewardParams = {
   // loss of the same length, and small enough that gold and troop income still
   // separate two wins from each other.
   wWin: 2,
-  // 0.004 per decision at one band of deviation, i.e. 0.012 at three bands,
-  // against a typical troop-income reward of ~0.005 per decision: loud enough
-  // to hold the army in the band, quiet enough that income still leads.
+  // 0.003 per decision at one band of deviation, i.e. 0.009 at three bands,
+  // against a typical troop-income reward of ~0.005 per decision. Two stronger,
+  // lower-band settings were measured and rejected (see `armyTarget`).
+  cArmyBand: 0.003,
+  // Free zone [0.40, 0.50]: it *contains* the income optimum of 0.422 and its
+  // low edge is the old one-sided floor, so the term reproduces the behaviour
+  // that actually won games and only adds a rail above 0.50.
   //
-  // An earlier attempt used 0.006 against a [0.20, 0.30] band and lost 8/10 ->
-  // 5/10 eval wins in three iterations, with the army at 0.24-0.33 and the tile
-  // share collapsed to 0.39-0.57. Against 18 opponents the bot needs the
-  // reserve: every winning run so far has sat at 0.30-0.45.
-  cArmyBand: 0.004,
-  // 0.35 with a +/-0.05 band leaves the army free in [0.30, 0.40], the range
-  // every winning run has landed in, while still pulling back the drift to 0.47.
-  // The engine's troops per second,
-  // `(10 + troops^0.73 / 4) * (1 - troops / maxTroops)`, peaks at a ratio of
-  // 0.422 for every cap, so a free zone reaching above 0.42 would only repeat
-  // what the income potential already pays.
-  armyTarget: 0.35,
+  // Two lower bands were measured on the 19-player field and both lost wins,
+  // resumed from the same 8/10 checkpoint (eval games won, out of 10):
+  //
+  //   band        it33  it36  it39   army seen
+  //   none        6     8     8      0.36-0.43
+  //   [0.30,0.40] 6     7     6      0.29-0.33
+  //   [0.20,0.30] 5     -     -      0.24-0.33   (stopped early, tile share 0.39)
+  //
+  // Against 18 opponents the reserve is load-bearing: pushing the army down
+  // costs territory, not because the bot "hoards" but because 40 % of the cap
+  // is what it takes to hold a 19-player board. The upper side of the band stays
+  // useful as a rail — troops per second decay above 0.422, so at 0.50 the
+  // potential is already negative and the band makes it explicit — but no
+  // measured run has reached it.
+  armyTarget: 0.45,
   armyBand: 0.05,
   maxArmyDeficit: 3,
   // Reached in ~500 decisions at the maximum deviation, so a policy that never

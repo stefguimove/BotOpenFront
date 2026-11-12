@@ -16,7 +16,7 @@ aux tuiles et à `maxTroops`.
 | Part de tuiles (terminal)   | `w_end_tiles · tileShare`     | **supprimé**                                   |
 | Gain de troupes par seconde | absent                        | **potentiel `log1p(troopIncome)`**             |
 | Or                          | potentiel `log1p(goldEarned)` | conservé                                       |
-| Armée                       | malus sous 0,18, plafonné à 3 | **bande symétrique** 0,35 ± 0,05 (§7.2 quater) |
+| Armée                       | malus sous 0,18, plafonné à 3 | **bande symétrique** 0,45 ± 0,05 (§7.2 quater) |
 
 Le signal militaire devient donc : _produire plus de troupes par seconde_.
 
@@ -263,7 +263,7 @@ sans prendre en compte les dépenses ».
 | Or, par décision | potentiel `log1p(goldEarned)` | **supprimé**                                    |
 | Or, en terminal  | rien                          | `w_end_gold · log1p(goldEarned_T) / log1p(1e6)` |
 | Troupes/s        | potentiel dense               | inchangé                                        |
-| Armée            | malus dense sous 0,40         | **bande** 0,35 ± 0,05, des deux côtés           |
+| Armée            | malus dense sous 0,40         | **bande** 0,45 ± 0,05, des deux côtés           |
 
 `goldEarned` est le compteur **cumulé** du moteur : incrémenté dans `addGold()`,
 jamais décrémenté par `removeGold()`. Le terme mesure donc ce que le bot a
@@ -297,8 +297,8 @@ une défaite, quelle que soit la durée. Elle est vérifiée par un test.
 
 ### 7.2 quater Bande d'armée (2026-11-13)
 
-Le plancher unilatéral à 0,40 était inutile comme cible de shaping : les
-troupes par seconde du moteur,
+Le plancher unilatéral à 0,40 ne pouvait mordre que vers le bas, donc il
+n'avait rien à dire sur le stockage. Les troupes par seconde du moteur,
 
 ```text
 troopIncreaseRate = (10 + troops^0,73 / 4) · (1 − troops / maxTroops)
@@ -308,33 +308,44 @@ atteignent leur maximum à un ratio de **0,422, quel que soit le plafond**
 (vérifié numériquement de 2 M à 12 M). Le potentiel de revenu paie donc déjà
 la politique pour garder 42 % du plafond : mesuré sur 30 itérations, l'armée
 s'est installée à 0,40–0,47, `wait` est monté à 75 % et ~20 % de la carte est
-resté neutre. Un plancher ne peut de toute façon que mordre vers le bas : il
-n'avait rien à dire sur le stockage.
+resté neutre.
 
 | Paramètre        | Valeur | Rôle                                            |
 | ---------------- | ------ | ----------------------------------------------- |
-| `armyTarget`     | 0,35   | centre de la bande                              |
-| `armyBand`       | 0,05   | demi-largeur : zone libre `[0,30 ; 0,40]`       |
-| `cArmyBand`      | 0,004  | malus par décision à une bande d'écart          |
-| `maxArmyDeficit` | 3      | l'écart cesse de croître à 3 bandes (0,20/0,50) |
+| `armyTarget`     | 0,45   | centre de la bande                              |
+| `armyBand`       | 0,05   | demi-largeur : zone libre `[0,40 ; 0,50]`       |
+| `cArmyBand`      | 0,003  | malus par décision à une bande d'écart          |
+| `maxArmyDeficit` | 3      | l'écart cesse de croître à 3 bandes (0,30/0,60) |
 | `armyPenaltyCap` | 6      | cumul maximal par épisode                       |
 
-Premier réglage essayé : `0,25 ± 0,05` (`[0,20 ; 0,30]`) avec `cArmyBand` 0,006.
-Mesuré sur le terrain à 19 acteurs en repartant du meilleur modèle : l'armée est
-bien descendue à 0,24–0,33 et `attack` est monté de 11 % à 28 %, mais les
-victoires se sont effondrées (éval 8/10 → **5/10** en trois itérations, part de
-tuiles 0,78 → 0,39–0,57). Contre 18 adversaires la réserve est nécessaire :
-toutes les séries gagnantes se situent entre 0,30 et 0,45. D'où le recentrage à
-**0,35 ± 0,05** et un malus réduit de moitié.
+Trois réglages ont été mesurés sur le terrain à 19 acteurs, en repartant chaque
+fois du même modèle (éval 8/10) et avec le même protocole. Victoires d'éval
+sur 10, aux mêmes itérations :
+
+| Zone libre    | it. 33 | it. 36 | it. 39 | armée observée | verdict                             |
+| ------------- | ------ | ------ | ------ | -------------- | ----------------------------------- |
+| aucune        | 6      | **8**  | **8**  | 0,36–0,43      | référence                           |
+| `[0,30;0,40]` | 6      | 7      | 6      | 0,29–0,33      | −1 à −2 gains                       |
+| `[0,20;0,30]` | 5      | —      | —      | 0,24–0,33      | arrêté : part de tuiles 0,78 → 0,39 |
+
+Conclusion inverse de l'hypothèse de départ : l'armée à 0,40 n'est pas du
+stockage gaspillé, c'est **la réserve dont le bot a besoin contre 18
+adversaires**. Pousser l'armée vers 0,25 fait monter `attack` de 11 % à 28 % et
+fait perdre des victoires.
+
+La bande est donc calée sur `[0,40 ; 0,50]` : son bord bas **est** l'ancien
+plancher (donc la plage qui gagnait est inchangée à l'identique) et son bord
+haut n'ajoute qu'un garde-fou au-dessus de l'optimum de revenu, jamais atteint
+par les séries mesurées.
 
 Deux contraintes vérifiées par des tests :
 
-1. le bord bas 0,30 est **au-dessus** de `ARMY_FLOOR_RATIO` (0,18) et du
+1. le bord bas 0,40 est **au-dessus** de `ARMY_FLOOR_RATIO` (0,18) et du
    plancher de la roulette d'entraînement (0,20) : le masque ne peut pas clouer
    l'armée à l'intérieur de la zone libre (c'est ce qui avait rendu le malus
    inerte) ;
-2. le bord haut 0,40 est **sous** l'optimum de revenu (0,422) : la bande apporte
-   une information que le potentiel ne contient pas déjà.
+2. la zone libre **contient** l'optimum de revenu (0,422) : la bande et le
+   potentiel ne se contredisent pas là où le bot joue réellement.
 
 ### 7.2 ter Résultat mesuré du correctif (A/B, même protocole)
 

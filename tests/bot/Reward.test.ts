@@ -9,10 +9,10 @@ import {
 } from "../../bot/config/reward";
 
 /**
- * A healthy army inside the band: 35 % of the cap, so the army term is silent
+ * A healthy army inside the band: 45 % of the cap, so the army term is silent
  * unless a test asks for it.
  */
-const ARMY = { troops: 280_000, maxTroops: 800_000 };
+const ARMY = { troops: 360_000, maxTroops: 800_000 };
 
 function step(
   state: ReturnType<typeof createRewardState>,
@@ -79,16 +79,16 @@ describe("stepReward", () => {
       small,
       REWARD_V2,
       { goldEarned: 0, troopIncome: 3_000 },
-      // Both armies sit inside the army band (0.40 and 0.35 of the cap), so
+      // Both armies sit inside the army band (0.42 and 0.45 of the cap), so
       // the army term is silent and only the income terms can differ — and they
       // do not.
-      { troops: 240_000, maxTroops: 600_000 },
+      { troops: 252_000, maxTroops: 600_000 },
     );
     const b = stepReward(
       big,
       REWARD_V2,
       { goldEarned: 0, troopIncome: 3_000 },
-      { troops: 280_000, maxTroops: 800_000 },
+      { troops: 360_000, maxTroops: 800_000 },
     );
     expect(a.reward).toBeCloseTo(b.reward, 12);
   });
@@ -153,17 +153,20 @@ describe("army band", () => {
       undefined,
     );
 
-  test("its free zone sits between the mask floor and the income optimum", () => {
+  test("its free zone contains the income optimum", () => {
     const low = REWARD_V2.armyTarget - REWARD_V2.armyBand;
     const high = REWARD_V2.armyTarget + REWARD_V2.armyBand;
     // Above the attack mask's floor, or the mask would pin the army inside the
     // zone and the term could never fire (the bug that made it inert before).
     expect(low).toBeGreaterThan(ARMY_FLOOR_RATIO);
-    // Below the income optimum, or the term would only repeat what the troop
-    // potential already rewards. The optimum is ~0.42 for every cap.
-    expect(high).toBeLessThan(incomeOptimumRatio(CAP));
-    expect(incomeOptimumRatio(2_000_000)).toBeGreaterThan(high);
-    expect(incomeOptimumRatio(12_000_000)).toBeGreaterThan(high);
+    // The zone must cover the ratio that maximises troop income (~0.42 for every
+    // cap), so the band and the potential never pull against each other where
+    // the bot actually plays: measured, a band below the optimum cost 1-2 eval
+    // wins out of 10 on the 19-player field.
+    expect(incomeOptimumRatio(CAP)).toBeGreaterThan(low);
+    expect(incomeOptimumRatio(2_000_000)).toBeGreaterThan(low);
+    expect(incomeOptimumRatio(12_000_000)).toBeGreaterThan(low);
+    expect(high).toBeGreaterThan(incomeOptimumRatio(CAP));
   });
 
   test("pays nothing inside the band", () => {
