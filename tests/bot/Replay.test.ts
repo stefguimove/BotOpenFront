@@ -1,12 +1,17 @@
+import { Difficulty } from "@openfront/engine-api/game/GameTypes";
 import type { HashUpdate } from "@openfront/engine-api/game/GameUpdates";
 import { GameUpdateType } from "@openfront/engine-api/game/GameUpdates";
 import { createGameRunner } from "@openfront/engine/GameRunner";
 import { loadMapFiles } from "@openfront/shared/GameMapLoader";
 import {
   decompressGameRecord,
+  replacer,
   toWireGameStartInfo,
 } from "@openfront/shared/SharedUtil";
-import { WireGameStartInfoSchema } from "@openfront/shared/WireSchemas";
+import {
+  GameRecordSchema,
+  WireGameStartInfoSchema,
+} from "@openfront/shared/WireSchemas";
 import { describe, expect, test } from "vitest";
 import {
   fingerprintEpisode,
@@ -108,31 +113,41 @@ describe("saved replay", () => {
   });
 });
 
+/**
+ * The training scenario, exactly: `compactConfig()` is TheBox 1024², Easy,
+ * 10 tribes and 2 nations — the same field the trainer and `bot:play` use.
+ * A record is only trustworthy if *this* scenario replays, so no test below
+ * switches to a smaller field.
+ */
 describe("record fidelity", () => {
-  test("a won game records its winner", { timeout: 120_000 }, async () => {
-    // Without `info.winner` the record never states the outcome, so a viewer
-    // that trusts the record shows "no winner" for a game the CLI reports as
-    // won. A duel (no tribes, one nation) is winnable well inside the limit,
-    // so the test does not depend on the policy's luck against 12 opponents.
-    const config = compactConfig({ bots: 0, nations: 1 });
-    const gameID = gameIDFor(3, 7);
+  const config = compactConfig();
+  const TICKS = 2_500;
+
+  /** Plays the training scenario with the aggressive behaviour forced. */
+  async function playTraining(seed: number) {
+    const gameID = gameIDFor(3, seed);
     const game = await createBotGame({ gameID, config });
     const result = playEpisode(game, {
-      maxTicks: 20_000,
+      maxTicks: TICKS,
       decisionInterval: 10,
       agent: new BotAgent({
         clientID: game.clientID,
-        // Force the aggressive behaviour: the point is the record, not the
-        // controller's choice.
+        // The controller is learned; the record must not depend on which
+        // behaviour it happens to prefer before training.
         weights: behaviourWeights("attack"),
         mode: "eval",
-        seed: 3,
+        seed,
       }),
     });
-    expect(result.stats.winner).toBe("bot");
-    expect(result.stats.winnerInfo).toEqual(["player", game.clientID]);
+    return { gameID, game, result };
+  }
 
-    const record = buildGameRecord({
+  function recordOf(
+    gameID: string,
+    result: Awaited<ReturnType<typeof playTraining>>["result"],
+    winner = result.stats.winnerInfo,
+  ) {
+    return buildGameRecord({
       gameID,
       config,
       players: [
@@ -146,72 +161,100 @@ describe("record fidelity", () => {
       turns: result.turns,
       startMs: 1_700_000_000_000,
       endMs: 1_700_000_000_000 + result.stats.ticks * 100,
-      winner: result.stats.winnerInfo,
+      winner,
     });
-    expect(record.info.winner).toEqual(["player", "BOT00001"]);
-  });
+  }
 
-  test(
-    "re-simulating a record reproduces the recorded winner",
-    { timeout: 120_000 },
-    async () => {
-      const config = compactConfig();
-      const gameID = gameIDFor(3, 8);
-      const game = await createBotGame({ gameID, config });
-      const result = playEpisode(game, {
-        maxTicks: 20_000,
-        decisionInterval: 10,
-        agent: new BotAgent({
-          clientID: game.clientID,
-          weights: createWeights(1),
-          mode: "eval",
-          seed: 3,
-        }),
-      });
-      const record = buildGameRecord({
-        gameID,
-        config,
-        players: [
-          {
-            clientID: "BOT00001",
-            username: "Bot",
-            clanTag: null,
-            isLobbyCreator: true,
-          },
-        ],
-        turns: result.turns,
-        startMs: 1_700_000_000_000,
-        endMs: 1_700_000_000_000 + result.stats.ticks * 100,
-        winner: result.stats.winnerInfo,
-      });
+  test("the field is the training composition", async () => {
+    // Guards the point of these tests: 10 tribes + 2 Easy nations, not a duel.
+    expect(config.bots).toBe(10);
+    expect(config.nations).toBe(2);
+    expect(config.difficulty).toBe(Difficulty.Easy);
+    const { game } = await playTraining(21);
+    expect(game.game.players().length).toBe(13);
+  }, 120_000);
 
-      const startInfo = toWireGameStartInfo(
-        WireGameStartInfoSchema.parse(record.info),
-      );
-      const { turns } = decompressGameRecord({ ...record });
-      const mapFiles = await loadMapFiles(
-        new CachedMapLoader(),
-        startInfo.config.gameMap,
-        startInfo.config.gameMapSize,
-      );
-      let winner: unknown;
-      const runner = await createGameRunner(
-        startInfo,
-        undefined,
-        mapFiles,
-        (u) => {
-          if ("errMsg" in u) return;
-          winner ??= u.updates[GameUpdateType.Win]?.[0]?.winner;
-        },
-      );
-      for (const turn of turns) {
-        runner.addTurn(turn);
-        if (!runner.executeNextTick()) break;
-        if (winner !== undefined) break;
+  test("the record states the outcome the game produced", async () => {
+    // The bug this covers: `buildGameRecord` used to be called without
+    // `winner`, so the record claimed "no winner" whatever happened. The
+    // outcome is whatever this scenario produces — against 12 Easy opponents
+    // an untrained policy does not reach 80 % in a few minutes, and asserting
+    // a win here would test luck instead of the record.
+    const { gameID, result } = await playTraining(22);
+    const record = recordOf(gameID, result);
+    expect(record.info.winner).toEqual(result.stats.winnerInfo);
+    expect(record.info.num_turns).toBe(result.stats.ticks);
+  }, 120_000);
+
+  test("a decided game keeps its winner through the record", async () => {
+    // The write path, on real turns from the training scenario: when the game
+    // does end with a winner, the tuple must survive the JSON round-trip.
+    const { gameID, result } = await playTraining(23);
+    const won = recordOf(gameID, result, ["player", "BOT00001"]);
+    expect(won.info.winner).toEqual(["player", "BOT00001"]);
+    const parsed = GameRecordSchema.parse(
+      JSON.parse(JSON.stringify(won, replacer)),
+    );
+    expect(parsed.info.winner).toEqual(["player", "BOT00001"]);
+  }, 120_000);
+
+  test("the training scenario replays to the same end state", async () => {
+    const { gameID, result } = await playTraining(24);
+    const record = recordOf(gameID, result);
+
+    const startInfo = toWireGameStartInfo(
+      WireGameStartInfoSchema.parse(record.info),
+    );
+    // The record is sparse: turns with no intent and no hash are dropped, and
+    // the viewer pads them back to `info.num_turns` before replaying.
+    const { turns } = decompressGameRecord({ ...record });
+    expect(turns.length).toBe(record.info.num_turns);
+    const mapFiles = await loadMapFiles(
+      new CachedMapLoader(),
+      startInfo.config.gameMap,
+      startInfo.config.gameMapSize,
+    );
+
+    const recorded = new Map<number, number>();
+    for (const turn of record.turns) {
+      if (turn.hash !== null && turn.hash !== undefined) {
+        recorded.set(turn.turnNumber, turn.hash);
       }
-      expect(winner).toEqual(result.stats.winnerInfo);
-    },
-  );
+    }
+
+    const computed = new Map<number, number>();
+    let winner: unknown;
+    let error: string | undefined;
+    const runner = await createGameRunner(
+      startInfo,
+      undefined,
+      mapFiles,
+      (update) => {
+        if ("errMsg" in update) {
+          error = update.errMsg;
+          return;
+        }
+        winner ??= update.updates[GameUpdateType.Win]?.[0]?.winner;
+        for (const hash of update.updates[
+          GameUpdateType.Hash
+        ] as HashUpdate[]) {
+          computed.set(hash.tick, hash.hash);
+        }
+      },
+    );
+    for (const turn of turns) {
+      runner.addTurn(turn);
+      if (!runner.executeNextTick()) break;
+      if (winner !== undefined) break;
+    }
+
+    expect(error).toBeUndefined();
+    expect(runner.game.ticks()).toBe(result.stats.ticks);
+    expect(winner).toEqual(result.stats.winnerInfo);
+    for (const [tick, hash] of recorded) {
+      expect(computed.get(tick)).toBe(hash);
+    }
+  }, 120_000);
 
   test("the default game id changes when the weights do", () => {
     // The id names the record and keys the viewer's replay store, so a constant
