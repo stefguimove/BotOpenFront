@@ -86,17 +86,13 @@ describe("stepReward", () => {
     expect(a.reward).toBeCloseTo(b.reward, 12);
   });
 
-  test("gold is still an income potential", () => {
+  test("gold is not paid per second any more", () => {
+    // Reward v3: only the terminal term pays gold, on the total earned.
     const state = createRewardState(10_000, 1_000);
     const up = step(state, 20_000, 1_000);
-    expect(up.gold).toBeGreaterThan(0);
     expect(up.troopIncome).toBe(0);
-  });
-
-  test("rewards revenue even when the bank is drained by spending", () => {
-    // goldEarned rises (income) while gold in bank falls (spending).
-    const state = createRewardState(10_000, 1_000);
-    expect(step(state, 20_000, 1_000).reward).toBeGreaterThan(0);
+    expect(up.reward).toBe(0);
+    expect(state.components).not.toHaveProperty("gold");
   });
 
   test("clips the per-decision reward", () => {
@@ -105,17 +101,15 @@ describe("stepReward", () => {
     expect(Math.abs(huge.reward)).toBeLessThanOrEqual(REWARD_V2.clip);
   });
 
-  test("sums to the final potential when nothing clips", () => {
-    // Both terms are potentials with gamma = 1, so the episode total is just
-    // Phi(s_T) - Phi(s_0): "how much more income do I have than at the start".
-    const state = createRewardState(1_000, 1_000);
+  test("sums to the final troop potential when nothing clips", () => {
+    // The troop term is a potential with gamma = 1, so the episode total is
+    // just Phi(s_T) - Phi(s_0), whatever the gold did.
     let total = 0;
+    const state = createRewardState(1_000, 1_000);
     for (let i = 1; i <= 20; i++) {
       total += step(state, 1_000 + i * 500, 1_000 + i * 200).reward;
     }
     const expected =
-      potentialOf(11_000, REWARD_V2.wGold) -
-      potentialOf(1_000, REWARD_V2.wGold) +
       potentialOf(5_000, REWARD_V2.wTroopIncome) -
       potentialOf(1_000, REWARD_V2.wTroopIncome);
     expect(total).toBeCloseTo(expected, 10);
@@ -171,12 +165,29 @@ describe("low-army penalty", () => {
 });
 
 describe("terminalReward", () => {
-  test("has no tile or maxTroops term left", () => {
-    expect(terminalReward(REWARD_V2, false)).toEqual({ reward: 0, win: 0 });
+  test("pays the total gold earned, once, at the end", () => {
+    const half = terminalReward(REWARD_V2, REWARD_V2.goldRef, false);
+    expect(half.gold).toBeCloseTo(1, 10);
+    // Saturates above the reference.
+    expect(terminalReward(REWARD_V2, REWARD_V2.goldRef * 100, false).gold).toBe(
+      1,
+    );
+    // Nothing earned, nothing paid.
+    expect(terminalReward(REWARD_V2, 0, false).gold).toBe(0);
   });
 
-  test("pays only a win bonus, which is off for short episodes", () => {
+  test("is insensitive to spending, which the counter ignores", () => {
+    // `goldEarned` is incremented in addGold() and untouched by removeGold(),
+    // so the terminal cannot be reduced by buying anything: 500k earned pays
+    // the same whether the bank is full or empty.
+    const a = terminalReward(REWARD_V2, 500_000, false);
+    const b = terminalReward(REWARD_V2, 500_000, false);
+    expect(a.gold).toBe(b.gold);
+    expect(a.gold).toBeGreaterThan(0);
+  });
+
+  test("keeps an optional win bonus, off for short episodes", () => {
     expect(REWARD_V2.wWin).toBe(0);
-    expect(terminalReward(REWARD_V2, true).win).toBe(REWARD_V2.wWin);
+    expect(terminalReward(REWARD_V2, 0, true).win).toBe(REWARD_V2.wWin);
   });
 });

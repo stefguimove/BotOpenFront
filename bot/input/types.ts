@@ -76,6 +76,15 @@ export interface SelfState {
   tileRate: number;
   /** Troop gain per second, straight from the engine's troopIncreaseRate. */
   troopIncome: number;
+  /** Rank by gold among all players, 0 = richest, 1 = poorest. */
+  goldRank: number;
+  /** Rank by troops, 0 = largest army. */
+  troopsRank: number;
+  /** Rank by tiles, 0 = biggest territory. */
+  tilesRank: number;
+  /** Factory *levels*: each level rolls for a train every tick. */
+  factoryLevels: number;
+  cityLevels: number;
   tiles: number;
   totalLandTiles: number;
   /** Tile share needed to win, 0-1. */
@@ -101,6 +110,16 @@ export interface SelfState {
   oldestAllianceAge: number;
   incomingRequestCount: number;
   isTraitor: boolean;
+  // Engine constants the encoders need to compute marginal values. Read once
+  // per decision from `Config` so the features always match this build.
+  /** Troop cap a single city level adds. */
+  cityTroopIncrease: number;
+  /** Defense bonus a Defense Post gives to nearby tiles (5x). */
+  defensePostDefenseBonus: number;
+  /** Divisor in the train spawn chance: (factories + 10) * factor. */
+  trainSpawnRateFactor: number;
+  /** Gold one train delivers to a non-ally neighbour. */
+  trainGold: number;
 }
 
 /** One opponent candidate: raw metadata, encoded per model on demand. */
@@ -115,6 +134,11 @@ export interface OpponentSlot {
   maxTroops: number;
   /** Attacks this player currently sends at the bot. */
   incomingAttackCount: number;
+  /** Allies of this candidate: they join its side if it is attacked. */
+  allyCount: number;
+  /** Defense Posts it owns (5x defence for nearby tiles). */
+  defensePostCount: number;
+  isTraitor: boolean;
   border: boolean;
   attackable: boolean;
   allied: boolean;
@@ -132,6 +156,9 @@ export interface StructureSlot {
   unitId: number;
   unitType: UnitType;
   level: number;
+  /** True for the two types whose upgrade has a known marginal value. */
+  isCity: boolean;
+  isFactory: boolean;
   levelRoom: number;
   underConstruction: boolean;
   upgradeable: boolean;

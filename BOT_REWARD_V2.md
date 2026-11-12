@@ -1,6 +1,7 @@
-# Bot OpenFront — Récompense v2 et fin du « full send »
+# Bot OpenFront — Récompense v2/v3 et fin du « full send »
 
-Statut : implémenté, mesuré. Remplace le §6.4 de
+Statut : implémenté, mesuré. **v3 (2026-11-12)** : l'or n'est plus payé au
+débit mais sur le **total gagné** en fin d'épisode (§7). Remplace le §6.4 de
 [`BOT_IMPLEMENTATION_V1.md`](BOT_IMPLEMENTATION_V1.md) pour tout ce qui touche
 aux tuiles et à `maxTroops`.
 
@@ -247,3 +248,43 @@ iteration 10 eval: tileShare=0.13631 army=0.240 act=wait 45%/attack 40%/diplomac
 Avec ce contrôleur, deux checkpoints différents d'un même run produisent enfin
 des parties différentes (113 964 vs 116 148 tuiles) : la politique pilote
 réellement le jeu.
+
+---
+
+## 7. v3 — l'or est payé sur le total gagné, pas au débit
+
+Décision du 2026-11-12 : « ne pas récompenser gold/s mais le total gold earned,
+sans prendre en compte les dépenses ».
+
+### 7.1 Ce qui change
+
+| Point            | v2                            | v3                                              |
+| ---------------- | ----------------------------- | ----------------------------------------------- |
+| Or, par décision | potentiel `log1p(goldEarned)` | **supprimé**                                    |
+| Or, en terminal  | rien                          | `w_end_gold · log1p(goldEarned_T) / log1p(1e6)` |
+| Troupes/s        | potentiel dense               | inchangé                                        |
+| Armée basse      | malus dense plafonné          | inchangé                                        |
+
+`goldEarned` est le compteur **cumulé** du moteur : incrémenté dans `addGold()`,
+jamais décrémenté par `removeGold()`. Le terme mesure donc ce que le bot a
+**gagné**, indépendamment de ce qu'il a dépensé — exactement la demande.
+
+### 7.2 Paramètres
+
+| Paramètre  | Valeur    | Rôle                         |
+| ---------- | --------- | ---------------------------- |
+| `wEndGold` | 1,0       | poids du terme or terminal   |
+| `goldRef`  | 1 000 000 | or gagné qui sature le terme |
+
+Une partie de 3 min à ~1 000 or/s gagne ~180 000 → terme ≈ 0,15 ; 1 M → 1,0.
+Plage comparable au terme de troupes (0 → ~10), donc l'or reste un signal
+secondaire mais réel, et il ne peut plus être « farmé » en faisant tourner
+l'économie sans progresser.
+
+### 7.3 Conséquence sur le crédit
+
+Un seul terme est désormais payé par décision (le revenu de troupes) : le
+gradient est plus propre, mais l'or ne guide plus les décisions intermédiaires.
+Si l'apprentissage de l'économie (villes/usines) stagne, la première chose à
+essayer est de rendre l'or de nouveau dense **en potentiel sur `goldEarned`**
+(somme télescopique identique en valeur totale).

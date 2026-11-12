@@ -28,6 +28,11 @@ export function selfState(overrides: Partial<SelfState> = {}): SelfState {
     goldRate: 1_000,
     tileRate: 5,
     troopIncome: 1_000,
+    goldRank: 0.5,
+    troopsRank: 0.5,
+    tilesRank: 0.5,
+    factoryLevels: 0,
+    cityLevels: 0,
     tiles: 1_000,
     totalLandTiles: 1_048_576,
     winShare: 0.8,
@@ -48,6 +53,10 @@ export function selfState(overrides: Partial<SelfState> = {}): SelfState {
     oldestAllianceAge: 0,
     incomingRequestCount: 0,
     isTraitor: false,
+    cityTroopIncrease: 250_000,
+    defensePostDefenseBonus: 5,
+    trainSpawnRateFactor: 15,
+    trainGold: 25_000,
     ...overrides,
   };
 }
@@ -74,6 +83,9 @@ export function opponent(
     canExtendAlliance: false,
     canBreakAlliance: false,
     attackingMe: false,
+    allyCount: 0,
+    defensePostCount: 0,
+    isTraitor: false,
     ...overrides,
   };
 }
@@ -82,9 +94,12 @@ export function structure(
   unitId: number,
   overrides: Partial<StructureSlot> = {},
 ): StructureSlot {
+  const unitType = overrides.unitType ?? UnitType.City;
   return {
     unitId,
-    unitType: UnitType.City,
+    unitType,
+    isCity: unitType === UnitType.City,
+    isFactory: unitType === UnitType.Factory,
     level: 1,
     levelRoom: 49,
     underConstruction: false,

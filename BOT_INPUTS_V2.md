@@ -125,7 +125,7 @@ Supprimés du vecteur v1 (jamais utilisés de façon plausible par ≥ 3 modèle
 
 ## 6. CONTEXTE et CANDIDAT par modèle
 
-### 6.1 `attack` (joint avec `ratio`) — 23 dims
+### 6.1 `attack` (joint avec `ratio`) — 29 dims
 
 Caractéristiques : features de **combat**.
 
@@ -149,7 +149,7 @@ Caractéristiques : features de **combat**.
 donnent au modèle de quoi distinguer « cible faible et occupée » de « cible
 forte et disponible », ce que 27 dims génériques ne permettaient pas.
 
-### 6.2 `build` — 22 dims
+### 6.2 `build` — 28 dims
 
 Features d'**économie** : rentabilité et plaçabilité. `payback`, `timeToAfford`
 et `goldCoverage` dépendent du coût, donc de l'option : ils appartiennent au
@@ -176,7 +176,7 @@ expriment « combien de secondes de revenu » coûte une structure, ce qui rend 
 types comparables entre eux (Ville 125 k vs Defense Post 50 k) — c'était absent
 de v1 (seul `cost/25e6` existait).
 
-### 6.3 `upgrade` — 17 dims
+### 6.3 `upgrade` — 22 dims
 
 | Bloc     | #   | Nom              | Formule                                          |
 | -------- | --- | ---------------- | ------------------------------------------------ |
@@ -226,7 +226,7 @@ toute jeune et forte n'a pas le même coût qu'une alliance ancienne et faible.
 |          | 6   | `targetAttacksMe`  | `attackingMe ? 1 : 0`                    |
 |          | 7   | `relativeStrength` | `clamp01(myTroops / (troops_cible + 1))` |
 
-### 6.6 `behaviour` — 16 dims (méta-contrôleur appris)
+### 6.6 `behaviour` — 20 dims (méta-contrôleur appris)
 
 Décision ajoutée le 2026-11-12 : le choix **quoi faire** n'est plus une règle
 mais une tête, avec `wait` dans l'espace d'action.
@@ -283,14 +283,21 @@ niveau du comportement, pas ici).
 
 ### 7.4 Budget de paramètres
 
-| Modèle            | v1 (in/out/params)  | v2 (in/out/params) |
+| Modèle            | v1 (in/out/params)  | v3 (in/out/params) |
 | ----------------- | ------------------- | ------------------ |
-| `attack` (+ratio) | 33 + 27 → **1 655** | **23 / 6 → 758**   |
-| `build`           | 31 / 1 → 801        | 22 / 1 → 657       |
-| `upgrade`         | 33 / 1 → 833        | 17 / 1 → 577       |
+| `behaviour`       | —                   | **20 / 5 → 693**   |
+| `attack` (+ratio) | 33 + 27 → **1 655** | **29 / 6 → 854**   |
+| `build`           | 31 / 1 → 801        | **28 / 1 → 753**   |
+| `upgrade`         | 33 / 1 → 833        | **22 / 1 → 657**   |
 | `diplomacyAction` | 27 / 5 → 805        | 16 / 5 → 629       |
 | `diplomacyTarget` | 33 / 1 → 833        | 24 / 1 → 689       |
-| **Total**         | **4 927**           | **3 310 (−33 %)**  |
+| **Total**         | **4 927**           | **4 275 (−13 %)**  |
+
+Vérifié dans le code : `totalParams(createWeights(1)) === 4275`, dimensions
+20 / 29 / 28 / 22 / 16 / 24 (six têtes : `behaviour` s'ajoute, `ratio`
+disparaît). Les entrées se sont enrichies le 2026-11-12 : classements dans
+`behaviour`, termes de combat dans `attack` (openfront.wiki/Combat), valeurs
+marginales dans `build`/`upgrade` (bot/train/building.md).
 
 ---
 

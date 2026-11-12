@@ -20,6 +20,7 @@ import { createBotGame, CachedMapLoader } from "../../bot/runtime/gameEnv";
 import { playEpisode } from "../../bot/runtime/loop";
 import { buildGameRecord } from "../../bot/runtime/record";
 import { gameIDFor } from "../../bot/train/train";
+import { behaviourWeights } from "./fixtures";
 
 /**
  * The replay viewer re-simulates the record with the engine and stops at the
@@ -111,8 +112,9 @@ describe("record fidelity", () => {
   test("a won game records its winner", { timeout: 120_000 }, async () => {
     // Without `info.winner` the record never states the outcome, so a viewer
     // that trusts the record shows "no winner" for a game the CLI reports as
-    // won.
-    const config = compactConfig();
+    // won. A duel (no tribes, one nation) is winnable well inside the limit,
+    // so the test does not depend on the policy's luck against 12 opponents.
+    const config = compactConfig({ bots: 0, nations: 1 });
     const gameID = gameIDFor(3, 7);
     const game = await createBotGame({ gameID, config });
     const result = playEpisode(game, {
@@ -120,7 +122,9 @@ describe("record fidelity", () => {
       decisionInterval: 10,
       agent: new BotAgent({
         clientID: game.clientID,
-        weights: createWeights(1),
+        // Force the aggressive behaviour: the point is the record, not the
+        // controller's choice.
+        weights: behaviourWeights("attack"),
         mode: "eval",
         seed: 3,
       }),

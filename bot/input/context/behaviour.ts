@@ -6,9 +6,10 @@ import type { SelfState } from "../types";
  * Context of the learned meta-controller.
  *
  * The controller answers "what should I do this decision?" among attack, build,
- * upgrade, diplomacy and wait. It needs to know how much of the economy exists
- * and how much pressure the bot is under — the same information the retired
- * rule-based priority used, but now visible to the model instead of hard-coded.
+ * upgrade, diplomacy and wait. It needs the shape of the economy, the pressure
+ * it is under, and — added after the first training runs — **where it stands
+ * relative to the field**: an action that is right when leading is often wrong
+ * when last, and ranks are the only scale-free way to say which it is.
  */
 export const BEHAVIOUR_CONTEXT = {
   cityCount: 0,
@@ -17,8 +18,12 @@ export const BEHAVIOUR_CONTEXT = {
   underAttack: 3,
   attackerCount: 4,
   allyCount: 5,
+  goldRank: 6,
+  troopsRank: 7,
+  tilesRank: 8,
+  tileShare: 9,
 } as const;
-export const BEHAVIOUR_CONTEXT_DIM = 6;
+export const BEHAVIOUR_CONTEXT_DIM = 10;
 
 export function encodeBehaviourContext(self: SelfState): number[] {
   return [
@@ -28,5 +33,10 @@ export function encodeBehaviourContext(self: SelfState): number[] {
     safe(self.incomingAttackCount) > 0 ? 1 : 0,
     clamp01(safe(self.attackerCount) / 10),
     clamp01(safe(self.allyCount) / 10),
+    // Ranks are already 0 (best) .. 1 (worst).
+    clamp01(safe(self.goldRank)),
+    clamp01(safe(self.troopsRank)),
+    clamp01(safe(self.tilesRank)),
+    clamp01(safe(self.tiles) / Math.max(1, safe(self.totalLandTiles))),
   ];
 }

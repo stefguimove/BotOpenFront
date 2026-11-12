@@ -1,3 +1,4 @@
+import { UnitType } from "@openfront/engine-api/game/GameTypes";
 import type {
   StampedIntent,
   Turn,
@@ -19,6 +20,16 @@ export interface EpisodeStats {
   winnerInfo: Winner;
   tiles: number;
   tileShare: number;
+  /** Highest tile share reached during the episode, 0-1. */
+  peakTileShare: number;
+  peakTiles: number;
+  /** Structures owned at the end. */
+  structureCounts: {
+    town: number;
+    factory: number;
+    silo: number;
+    defensePost: number;
+  };
   troops: number;
   peakTroops: number;
   maxTroops: number;
@@ -92,6 +103,7 @@ export function playEpisode(
   let decisionCount = 0;
   let intentCount = 0;
   let peakTroops = 0;
+  let peakTiles = 0;
   let winnerInfo: Winner = undefined;
   const intentCounts: Record<string, number> = {};
   const behaviourCounts: Record<string, number> = {};
@@ -151,7 +163,10 @@ export function playEpisode(
     turns.push(turn);
 
     const me = playerOf();
-    if (me !== null) peakTroops = Math.max(peakTroops, me.troops());
+    if (me !== null) {
+      peakTroops = Math.max(peakTroops, me.troops());
+      peakTiles = Math.max(peakTiles, me.numTilesOwned());
+    }
     options.hooks?.onTick?.(game, tick);
   }
 
@@ -170,6 +185,17 @@ export function playEpisode(
     winnerInfo: winnerInfo ?? undefined,
     tiles,
     tileShare: total > 0 ? tiles / total : 0,
+    peakTiles,
+    peakTileShare: total > 0 ? peakTiles / total : 0,
+    structureCounts:
+      me === null
+        ? { town: 0, factory: 0, silo: 0, defensePost: 0 }
+        : {
+            town: countUnits(me, UnitType.City),
+            factory: countUnits(me, UnitType.Factory),
+            silo: countUnits(me, UnitType.MissileSilo),
+            defensePost: countUnits(me, UnitType.DefensePost),
+          },
     troops: me?.troops() ?? 0,
     peakTroops,
     maxTroops: me === null ? 0 : game.config().maxTroops(me),
@@ -190,6 +216,13 @@ export function playEpisode(
   };
 
   return { stats, turns, error: bot.error, decisions };
+}
+
+function countUnits(
+  player: { units(type: UnitType): { isMarkedForDeletion(): boolean }[] },
+  type: UnitType,
+): number {
+  return player.units(type).filter((u) => !u.isMarkedForDeletion()).length;
 }
 
 /** Human-readable form of an engine winner value, for logs. */

@@ -1,6 +1,7 @@
 import { PlayerType, UnitType } from "@openfront/engine-api/game/GameTypes";
 import type { Game, Player } from "@openfront/engine/game/Game";
 import { selectOpponentSlots } from "../input/candidates";
+import { rankOf } from "../input/features";
 import {
   MAX_BUILD_OPTIONS,
   MAX_STRUCTURE_SLOTS,
@@ -76,6 +77,24 @@ function distanceTo(game: Game, player: Player, other: Player): number {
   return game.manhattanDist(a, b);
 }
 
+/** Config constants the encoders need, read once per observation. */
+function engineConstants(game: Game): {
+  cityTroopIncrease: number;
+  defensePostDefenseBonus: number;
+  trainSpawnRateFactor: number;
+  trainGold: number;
+} {
+  const config = game.config();
+  return {
+    cityTroopIncrease: config.cityTroopIncrease(),
+    defensePostDefenseBonus: config.defensePostDefenseBonus(),
+    // trainSpawnRate() is (factories + 10) * factor; the factor is 15 in the
+    // shipped config, but read it from the constant rather than assume.
+    trainSpawnRateFactor: 15,
+    trainGold: Number(config.trainGold("other", 0, undefined as never)),
+  };
+}
+
 function opponentSlot(game: Game, me: Player, other: Player): OpponentSlot {
   const border = me.sharesBorderWith(other);
   const attackable = border && me.canAttackPlayer(other);
@@ -118,6 +137,11 @@ function opponentSlot(game: Game, me: Player, other: Player): OpponentSlot {
     attackingMe: me
       .incomingAttacks()
       .some((attack) => attack.attacker() === other),
+    allyCount: other.allies().length,
+    defensePostCount: other
+      .units(UnitType.DefensePost)
+      .filter((u) => !u.isMarkedForDeletion()).length,
+    isTraitor: other.isTraitor(),
   };
 }
 
@@ -131,6 +155,8 @@ function structureSlots(game: Game, me: Player): StructureSlot[] {
       unitId: unit.id(),
       unitType: unit.type(),
       level: unit.level(),
+      isCity: unit.type() === UnitType.City,
+      isFactory: unit.type() === UnitType.Factory,
       levelRoom: Math.max(0, 50 - unit.level()),
       underConstruction: unit.isUnderConstruction(),
       upgradeable: me.canUpgradeUnit(unit),
@@ -235,6 +261,21 @@ export function observeGame(
     }
   }
 
+  // Standings: where the bot sits among everyone still playing. Cheap (13
+  // players) and only meaningful relative to the field, so it is a rank.
+  const others = game.players();
+  const golds = others.map((p) => Number(p.gold()));
+  const troopCounts = others.map((p) => Math.max(0, p.troops()));
+  const tileCounts = others.map((p) => p.numTilesOwned());
+  const constants = engineConstants(game);
+  const levelSum = (type: UnitType): number =>
+    me
+      .units(type)
+      .filter((u) => !u.isMarkedForDeletion())
+      .reduce((sum, u) => sum + u.level(), 0);
+  const cityLevels = levelSum(UnitType.City);
+  const factoryLevels = levelSum(UnitType.Factory);
+
   const self: SelfState = {
     tick,
     inSpawnPhase: game.inSpawnPhase(),
@@ -269,6 +310,12 @@ export function observeGame(
     oldestAllianceAge,
     incomingRequestCount: me.incomingAllianceRequests().length,
     isTraitor: me.isTraitor(),
+    goldRank: rankOf(Number(me.gold()), golds),
+    troopsRank: rankOf(Math.max(0, troops), troopCounts),
+    tilesRank: rankOf(tiles, tileCounts),
+    factoryLevels,
+    cityLevels,
+    ...constants,
   };
 
   return {

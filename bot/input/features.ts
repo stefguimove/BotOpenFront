@@ -55,3 +55,67 @@ export function tileShareOf(tiles: number, totalLandTiles: number): number {
   const share = safe(tiles) / total;
   return share > 1 ? 1 : share < 0 ? 0 : share;
 }
+
+/**
+ * Troop income (per second) the engine would add at a given standing army and
+ * cap. This mirrors `troopIncreaseRate`: `(10 + troops^0.73 / 4) * (1 - troops/max) * 10`.
+ */
+export function troopIncomeAt(
+  troops: number,
+  maxTroops: number,
+  ticksPerSecond = 10,
+): number {
+  const t = Math.max(0, safe(troops));
+  const cap = Math.max(1, safe(maxTroops));
+  const base = 10 + Math.pow(t, 0.73) / 4;
+  return base * (1 - Math.min(1, t / cap)) * ticksPerSecond;
+}
+
+/**
+ * Extra troop income per second a city level buys.
+ *
+ * A city level raises `maxTroops` by `cityTroopIncrease`, which lifts the
+ * `1 - troops/maxTroops` factor. That is the economic value of a city, and it
+ * grows with how full the current cap is: at 0 troops a new city is worth
+ * nothing, at 90 % of the cap it is worth a lot.
+ */
+export function cityIncomeGain(
+  troops: number,
+  maxTroops: number,
+  cityTroopIncrease: number,
+): number {
+  const now = troopIncomeAt(troops, maxTroops);
+  const after = troopIncomeAt(
+    troops,
+    maxTroops + Math.max(0, safe(cityTroopIncrease)),
+  );
+  return Math.max(0, after - now);
+}
+
+/**
+ * Extra gold per second one more factory level (or one more factory) buys.
+ *
+ * `TrainStationExecution` rolls `level` times per tick with chance
+ * `1 / ((factories + 10) * factor)`, and a train pays `trainGold` to a
+ * neighbour. So one level is worth `10 * trainGold / ((factories+10) * factor)`
+ * gold per second.
+ */
+export function factoryGoldGain(
+  factories: number,
+  trainSpawnRateFactor: number,
+  trainGold: number,
+): number {
+  const n = Math.max(0, safe(factories));
+  const factor = Math.max(1, safe(trainSpawnRateFactor));
+  return (10 * Math.max(0, safe(trainGold))) / ((n + 10) * factor);
+}
+
+/** Rank of `value` among `all`, as 0 (best) .. 1 (worst). */
+export function rankOf(value: number, all: readonly number[]): number {
+  if (all.length <= 1) return 0;
+  let better = 0;
+  for (const other of all) {
+    if (other > value) better += 1;
+  }
+  return better / (all.length - 1);
+}

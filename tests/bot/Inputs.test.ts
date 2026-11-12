@@ -1,12 +1,15 @@
 import { PlayerType, UnitType } from "@openfront/engine-api/game/GameTypes";
 import { describe, expect, test } from "vitest";
 import {
+  ATTACK_CANDIDATE,
   ATTACK_CANDIDATE_DIM,
   ATTACK_CONTEXT_DIM,
+  encodeAttackCandidate,
   encodeAttackContext,
 } from "../../bot/input/context/attack";
 import {
   BUILD_CANDIDATE_DIM,
+  BUILD_CONTEXT,
   BUILD_CONTEXT_DIM,
   encodeBuildCandidate,
   encodeBuildContext,
@@ -100,8 +103,25 @@ describe("encodeCore", () => {
 describe("attack encoder", () => {
   test("dimensions", () => {
     expect(encodeAttackContext(selfState())).toHaveLength(ATTACK_CONTEXT_DIM);
-    const candidate = [0, 0.1, 0.5, 0.5, 0.2, 0.3, 0, 0, 1, 0.2];
-    expect(candidate).toHaveLength(ATTACK_CANDIDATE_DIM);
+    // The combat terms (troopRatio, density, defense posts, traitor, allies)
+    // are part of the candidate vector.
+    expect(ATTACK_CANDIDATE_DIM).toBe(15);
+    expect(ATTACK_CANDIDATE.troopRatio).toBe(10);
+    expect(ATTACK_CANDIDATE.targetAllyCount).toBe(14);
+    // The defender/attacker ratio is the loss driver from the combat formula.
+    const weak = encodeAttackCandidate(
+      opponent("a", { troops: 1_000 }),
+      selfState({ troops: 100_000 }),
+      1_000,
+    );
+    const strong = encodeAttackCandidate(
+      opponent("a", { troops: 100_000 }),
+      selfState({ troops: 100_000 }),
+      1_000,
+    );
+    expect(weak[ATTACK_CANDIDATE.troopRatio]).toBeLessThan(
+      strong[ATTACK_CANDIDATE.troopRatio],
+    );
   });
 
   test("context is bounded", () => {
@@ -135,7 +155,6 @@ describe("build encoder", () => {
       buildOption(UnitType.DefensePost, { cost: 50_000 }),
       self,
     );
-    // payback sits at BUILD_CANDIDATE index 4.
     expect(city[4]).toBeGreaterThan(post[4]);
     expect(paybackSeconds(125_000, 1_000)).toBe(125);
     expect(paybackSeconds(125_000, 0)).toBe(125_000);
@@ -151,9 +170,19 @@ describe("build encoder", () => {
     const context = encodeBuildContext(
       selfState({ incomingAttackCount: 2, tick: 5_000 }),
     );
-    // underAttack and lateGame are the last two context features.
-    expect(context[BUILD_CONTEXT_DIM - 2]).toBe(1);
-    expect(context[BUILD_CONTEXT_DIM - 1]).toBe(1);
+    expect(context[BUILD_CONTEXT.underAttack]).toBe(1);
+    expect(context[BUILD_CONTEXT.lateGame]).toBe(1);
+    // A full cap leaves no headroom, so a city would buy nothing.
+    expect(
+      encodeBuildContext(selfState({ troops: 100_000, maxTroops: 100_000 }))[
+        BUILD_CONTEXT.capHeadroom
+      ],
+    ).toBe(0);
+    expect(
+      encodeBuildContext(selfState({ troops: 0, maxTroops: 100_000 }))[
+        BUILD_CONTEXT.capHeadroom
+      ],
+    ).toBe(1);
   });
 
   test("stays bounded on extreme values", () => {

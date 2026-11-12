@@ -111,11 +111,11 @@ describe("encodeModelInput", () => {
     expect(() => encodeModelInput("attack", core, [], null)).toThrow(
       /context dim/,
     );
-    expect(() => encodeModelInput("attack", core, [0, 0, 0], null)).toThrow(
-      /candidate/,
-    );
     expect(() =>
-      encodeModelInput("build", core, new Array(5).fill(0), null),
+      encodeModelInput("attack", core, new Array(4).fill(0), null),
+    ).toThrow(/candidate/);
+    expect(() =>
+      encodeModelInput("build", core, new Array(7).fill(0), null),
     ).toThrow(/candidate/);
     expect(() =>
       encodeModelInput("diplomacyAction", core, new Array(6).fill(0), [0]),

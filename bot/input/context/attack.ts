@@ -1,6 +1,6 @@
 import { PlayerType } from "@openfront/engine-api/game/GameTypes";
 import { forceRatio, REF, tileShareOf } from "../features";
-import { clamp01, logScale, safe } from "../normalize";
+import { clamp, clamp01, logScale, safe } from "../normalize";
 import type { Observation, OpponentSlot, SelfState } from "../types";
 
 /** Combat features for the joint attack x ratio head (BOT_INPUTS_V2.md §6.1). */
@@ -8,9 +8,26 @@ export const ATTACK_CONTEXT = {
   readyNukes: 0,
   allyCount: 1,
   frontPressure: 2,
+  /** log(tiles) drives the large-territory bonus: big attackers lose less. */
+  largeAttacker: 3,
 } as const;
-export const ATTACK_CONTEXT_DIM = 3;
+export const ATTACK_CONTEXT_DIM = 4;
 
+/** Tiles at which the large-territory bonus is halfway (openfront.wiki/Combat). */
+const LARGE_TERRITORY_HALF = 300_000;
+
+/**
+ * Combat features (openfront.wiki/Combat, update 34 model):
+ *
+ *   troopRatio   = defenderTroops / attackTroops
+ *   attackerLoss = mag * traitorDebuff * clamp(troopRatio, 0.6, 2)
+ *                  * (0.463 * largeAttacker * largeDefender
+ *                     + 0.0039 * defenderTroopsPerTile)
+ *
+ * so the loss per tile is driven by the *defender/attacker* ratio, by the
+ * defender's troop density, by its Defense Posts (5x) and by its traitor
+ * debuff. All four are candidate features now.
+ */
 export const ATTACK_CANDIDATE = {
   distance: 0,
   targetTileShare: 1,
@@ -22,8 +39,18 @@ export const ATTACK_CANDIDATE = {
   targetAllied: 7,
   targetAttacksMe: 8,
   targetBusy: 9,
+  /** clamp(defenderTroops / myTroops, 0.6, 2) / 2: the loss multiplier. */
+  troopRatio: 10,
+  /** Troops per tile: packed land is expensive to take, thin land is cheap. */
+  defenderDensity: 11,
+  /** Its Defense Posts: 5x defence within 30 tiles. */
+  targetDefensePosts: 12,
+  /** Traitors defend worse. */
+  targetIsTraitor: 13,
+  /** Allies it can call on. */
+  targetAllyCount: 14,
 } as const;
-export const ATTACK_CANDIDATE_DIM = 10;
+export const ATTACK_CANDIDATE_DIM = 15;
 
 /** TerraNullius: no army, no gold, adjacent — the cheapest possible target. */
 export const TERRA_CANDIDATE: readonly number[] = Object.freeze([
@@ -37,6 +64,11 @@ export const TERRA_CANDIDATE: readonly number[] = Object.freeze([
   0, // targetAllied
   0, // targetAttacksMe
   0, // targetBusy
+  0, // troopRatio: no defenders
+  0, // defenderDensity
+  0, // targetDefensePosts
+  0, // targetIsTraitor
+  0, // targetAllyCount
 ]);
 
 export function encodeAttackContext(self: SelfState): number[] {
@@ -44,6 +76,7 @@ export function encodeAttackContext(self: SelfState): number[] {
     clamp01(safe(self.readySiloCount) / 5),
     clamp01(safe(self.allyCount) / 10),
     clamp01(safe(self.incomingAttackCount) / 10),
+    logScale(self.tiles, LARGE_TERRITORY_HALF),
   ];
 }
 
@@ -64,6 +97,15 @@ export function encodeAttackCandidate(
     slot.allied ? 1 : 0,
     slot.attackingMe ? 1 : 0,
     clamp01(safe(slot.incomingAttackCount) / 10),
+    // `clamp(troopRatio, 0.6, 2) / 2` keeps the useful part of the curve and
+    // saturates where the engine clamps too.
+    clamp01(
+      clamp(safe(slot.troops) / Math.max(1, safe(self.troops)), 0.6, 2) / 2,
+    ),
+    logScale(safe(slot.troops) / Math.max(1, safe(slot.tiles)), 1_000),
+    clamp01(safe(slot.defensePostCount) / 4),
+    slot.isTraitor ? 1 : 0,
+    clamp01(safe(slot.allyCount) / 10),
   ];
 }
 

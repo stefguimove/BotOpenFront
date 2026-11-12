@@ -76,10 +76,6 @@ export class EpisodeRewards {
     if (!this.seeded) {
       // Seed at the first decision so its own interval is measured by the next
       // observation instead of a free spawn-phase delta.
-      this.state.potentialGold = potentialOf(
-        sample.goldEarned,
-        this.params.wGold,
-      );
       this.state.potentialTroopIncome = potentialOf(
         sample.troopIncome,
         this.params.wTroopIncome,
@@ -167,6 +163,7 @@ export async function runEpisode(
 
   const terminal = terminalReward(
     options.reward,
+    result.stats.goldEarned,
     result.stats.winner === "bot",
   );
   rewards.finish(sample(game.game), terminal.reward);

@@ -133,6 +133,37 @@ export function defaultTrainOptions(
   };
 }
 
+/**
+ * One line per episode: outcome, peak territory, total gold earned and the
+ * structures the bot ended with. Deliberately narrow — the point is to read a
+ * generation at a glance, not to log everything the engine knows.
+ */
+export function formatGameLine(
+  gameID: string,
+  stats: {
+    winner: "bot" | "other" | "none";
+    alive: boolean;
+    peakTileShare: number;
+    goldEarned: number;
+    structureCounts: {
+      town: number;
+      factory: number;
+      silo: number;
+      defensePost: number;
+    };
+  },
+): string {
+  const outcome =
+    stats.winner === "bot" ? "WIN " : stats.alive ? "loss" : "dead";
+  const s = stats.structureCounts;
+  return (
+    `${gameID} ${outcome} ` +
+    `peak=${(100 * stats.peakTileShare).toFixed(1)}% ` +
+    `gold=${Math.round(stats.goldEarned)} ` +
+    `town=${s.town} factory=${s.factory} silo=${s.silo} post=${s.defensePost}`
+  );
+}
+
 /** "attack 55% / wait 40% / diplomacy 5 %" for the iteration log. */
 export function formatShares(counts: Record<string, number>): string {
   let total = 0;
@@ -172,6 +203,8 @@ export interface IterationReport {
   behaviourCounts: Record<string, number>;
   /** Share of `attack` intents among all intents, 0-1. */
   attackShare: number;
+  /** Episodes the bot won. */
+  wins: number;
   /** Largest and mean absolute weight change of this iteration. */
   weightDelta: { max: number; mean: number };
   updatedModels: ModelName[];
@@ -250,6 +283,8 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
       let episodes = 0;
       let troopRatioSum = 0;
       let troopIncomeSum = 0;
+      let wins = 0;
+      const gameLines: string[] = [];
       const intentCounts: Record<string, number> = {};
       const behaviourCounts: Record<string, number> = {};
       for (let index = 0; index < outcomes.length; index++) {
@@ -279,8 +314,14 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         )) {
           behaviourCounts[name] = (behaviourCounts[name] ?? 0) + count;
         }
+        if (outcome.stats.winner === "bot") wins += 1;
+        gameLines.push(formatGameLine(tasks[index].gameID, outcome.stats));
         episodes += 1;
       }
+
+      // One line per game, then the generation's balance. The detailed
+      // counters (dW, behaviour mix) stay, on the summary line.
+      for (const line of gameLines) options.log(`  ${line}`);
 
       const { models: updatedModels, delta } = applyReturns(
         returns,
@@ -300,17 +341,17 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         intentCounts,
         behaviourCounts,
         attackShare: intentShare(intentCounts, "attack"),
+        wins,
         weightDelta: delta,
         updatedModels,
       };
       history.push(report);
       options.log(
-        `iteration ${iteration}: episodes=${episodes} steps=${steps} ` +
-          `reward=${report.meanReward.toFixed(4)} ` +
-          `tileShare=${report.meanTileShare.toFixed(5)} ` +
-          `army=${report.meanTroopRatio.toFixed(3)} ` +
+        `iteration ${iteration}: wins ${wins}/${episodes} ` +
+          `| reward=${report.meanReward.toFixed(4)} ` +
+          `tileShare=${report.meanTileShare.toFixed(4)} ` +
+          `army=${report.meanTroopRatio.toFixed(2)} ` +
           `troops/s=${report.meanTroopIncome.toFixed(0)} ` +
-          `attack=${(100 * report.attackShare).toFixed(0)}% ` +
           `act=${formatShares(behaviourCounts)} ` +
           `dW=${delta.mean.toExponential(1)} ` +
           `updated=${updatedModels.join(",") || "none"}`,
