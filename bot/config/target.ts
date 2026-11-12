@@ -22,6 +22,11 @@ export const BOT_USERNAME = "Bot";
  * 2+10 -> 3/3 wins, 4+12 -> 3/3, 5+13 -> 1/3 with tile shares 0.56/0.57/0.80,
  * 6+14 -> 0/2 at 25 %. 19 players is the largest field where the current
  * policy still wins sometimes, i.e. where training has headroom.
+ *
+ * Warm start is required on this field: training from fresh random weights
+ * reached 0/10 eval wins and 0.02-0.25 tile share (random play dies during the
+ * spawn phase against 18 opponents). Resumed from the 13-player best instead,
+ * it reached 6-8/10 wins and 0.78 tile share, then early-stopped at 8/10.
  */
 export function targetConfig(overrides: Partial<GameConfig> = {}): GameConfig {
   return {
