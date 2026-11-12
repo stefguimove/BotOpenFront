@@ -5,7 +5,7 @@ import {
   MODEL_STRIDE,
   type ModelName,
 } from "../input/schema";
-import { RATIO_BUCKETS } from "../input/types";
+import { BEHAVIOUR_OPTIONS, RATIO_BUCKETS } from "../input/types";
 import { createMlp, paramCount, type MlpParams } from "./mlp";
 
 export const HIDDEN = 16;
@@ -15,6 +15,7 @@ export type { ModelName };
 
 /** Logits per head: one per candidate except `diplomacyAction`. */
 export const MODEL_OUTPUT_DIM: Record<ModelName, number> = {
+  behaviour: BEHAVIOUR_OPTIONS.length,
   attack: RATIO_BUCKETS.length,
   build: 1,
   upgrade: 1,
@@ -25,11 +26,13 @@ export const MODEL_OUTPUT_DIM: Record<ModelName, number> = {
 export type AgentWeights = Record<ModelName, MlpParams>;
 
 /**
+ * 4: the meta-controller became a learned head (`behaviour`), so there are six
+ *    models instead of five and every older file lacks one of them.
  * 3: core slot 7 became troop income per second instead of tile rate
- *    (BOT_REWARD_V2.md). Shapes are unchanged, but a v2 checkpoint learned a
- *    different feature there, so loading it silently would be wrong.
+ *    (BOT_REWARD_V2.md). Shapes were unchanged then, but a v2 checkpoint had
+ *    learned a different feature there, so loading it silently would be wrong.
  */
-export const CHECKPOINT_VERSION = 3;
+export const CHECKPOINT_VERSION = 4;
 
 export function createWeights(seed = 1): AgentWeights {
   const out = {} as AgentWeights;

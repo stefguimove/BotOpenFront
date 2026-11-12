@@ -2,11 +2,11 @@ import { describe, expect, test } from "vitest";
 import { ARMY_FLOOR_RATIO } from "../../bot/actions/attackPolicy";
 import { TRAINING_WHEELS } from "../../bot/actions/trainingWheels";
 import { compactConfig } from "../../bot/config/target";
-import { createWeights } from "../../bot/models/weights";
 import { BotAgent } from "../../bot/runtime/agent";
 import { createBotGame } from "../../bot/runtime/gameEnv";
 import { playEpisode } from "../../bot/runtime/loop";
 import { gameIDFor } from "../../bot/train/train";
+import { behaviourWeights } from "./fixtures";
 
 const config = compactConfig();
 const TICKS = 900;
@@ -27,7 +27,8 @@ async function playAttacks(options: {
   const game = await createBotGame({ gameID: gameIDFor(91, seed), config });
   const agent = new BotAgent({
     clientID: game.clientID,
-    weights: createWeights(1),
+    // The controller is learned now: ask for attacks explicitly.
+    weights: behaviourWeights("attack"),
     mode: options.mode,
     seed,
     trainingWheels: options.trainingWheels,
@@ -107,7 +108,8 @@ describe("attack sizing vs the army floor", () => {
   test("eval mode plays unaided by default", () => {
     const agent = new BotAgent({
       clientID: "BOT00001",
-      weights: createWeights(1),
+      // The controller is learned now: ask for attacks explicitly.
+      weights: behaviourWeights("attack"),
       mode: "eval",
     });
     expect(agent.trainingWheels).toBeNull();

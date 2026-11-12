@@ -1,7 +1,7 @@
 import { UnitType } from "@openfront/engine-api/game/GameTypes";
 import type { StampedIntent } from "@openfront/engine-api/Schemas";
 import type { Game, Player } from "@openfront/engine/game/Game";
-import { due, type Behaviour } from "../actions/cadence";
+import { due } from "../actions/cadence";
 import {
   allianceExtensionIntent,
   allianceRejectIntent,
@@ -35,9 +35,12 @@ import {
   type ModelName,
 } from "../input/schema";
 import {
+  BEHAVIOUR_OPTIONS,
   DIPLOMACY_ACTIONS,
   NOOP_ACTION,
   RATIO_BUCKETS,
+  WAIT_BEHAVIOUR,
+  type BehaviourOption,
   type Observation,
 } from "../input/types";
 import { makeRng, mlpForward, type Rng } from "../models/mlp";
@@ -79,6 +82,15 @@ export interface BotAgentOptions {
    * on in train mode and off in eval mode; `null` disables it explicitly.
    */
   trainingWheels?: TrainingWheels | null;
+  /**
+   * Take the argmax instead of sampling.
+   *
+   * Default is false: this is a stochastic policy trained with REINFORCE, so
+   * the honest way to play it is to sample. The greedy mode collapsed to
+   * "wait" after a short run while the sampled policy expanded, and it also
+   * made `play` look insensitive to the weights.
+   */
+  greedy?: boolean;
 }
 
 /**
@@ -95,6 +107,7 @@ export class BotAgent implements Agent {
   private readonly weights: AgentWeights;
   private readonly mode: AgentMode;
   private readonly wheels: TrainingWheels | null;
+  private readonly greedy: boolean;
   private readonly rng: Rng;
   private memory: ObservationMemory = createObservationMemory();
   /** Decisions sampled on the last `decide()`, in order. */
@@ -105,6 +118,7 @@ export class BotAgent implements Agent {
     this.weights = options.weights;
     this.mode = options.mode ?? "eval";
     this.wheels = resolveTrainingWheels(this.mode, options.trainingWheels);
+    this.greedy = options.greedy ?? false;
     this.rng = makeRng(options.seed ?? 1234);
   }
 
@@ -129,15 +143,15 @@ export class BotAgent implements Agent {
     const cancel = this.maybeCancel(player);
     if (cancel !== null) intents.push(cancel);
 
-    const options = this.applicable(
+    const mask = this.behaviourMask(
       obs,
       tick,
       player,
       game.config().maxTroops(player),
     );
-    if (options.length === 0) return intents;
+    const behaviour = this.chooseBehaviour(obs, mask);
+    if (behaviour === null || behaviour === WAIT_BEHAVIOUR) return intents;
 
-    const behaviour = this.pickBehaviour(options, obs);
     const intent = this.runBehaviour(behaviour, obs, player, game, tick);
     if (intent !== null) {
       if (validateIntent(game, player, intent)) intents.push(intent);
@@ -158,48 +172,60 @@ export class BotAgent implements Agent {
     return null;
   }
 
-  private applicable(
+  /**
+   * Which behaviours are legal at this tick, in `BEHAVIOUR_OPTIONS` order.
+   * `wait` is always legal: the controller must be able to do nothing, which is
+   * the whole point of making it learned instead of a fixed fallback.
+   */
+  private behaviourMask(
     obs: Observation,
     tick: number,
     player: Player,
     maxTroops: number,
-  ): Behaviour[] {
-    const options: Behaviour[] = [];
-    if (
+  ): boolean[] {
+    const attack =
       due("attack", tick) &&
       attackTargets(obs).length > 0 &&
-      trainingWheelsAllowAttack(Number(player.troops()), maxTroops, this.wheels)
-    ) {
-      options.push("attack");
-    }
-    if (due("build", tick) && buildMask(obs).some(Boolean)) {
-      options.push("build");
-    }
-    if (
+      trainingWheelsAllowAttack(
+        Number(player.troops()),
+        maxTroops,
+        this.wheels,
+      );
+    const build = due("build", tick) && buildMask(obs).some(Boolean);
+    const upgrade =
       due("upgrade", tick) &&
-      obs.structures.some((s) => s.upgradeable && s.affordable)
-    ) {
-      options.push("upgrade");
-    }
-    if (due("diplomacy", tick) && diplomacyMask(obs).any) {
-      options.push("diplomacy");
-    }
-    return options;
+      obs.structures.some((s) => s.upgradeable && s.affordable);
+    const diplomacy = due("diplomacy", tick) && diplomacyMask(obs).any;
+    return [attack, build, upgrade, diplomacy, true];
   }
 
-  private pickBehaviour(options: Behaviour[], obs: Observation): Behaviour {
-    if (this.mode === "train") {
-      const index = Math.min(
-        options.length - 1,
-        Math.floor(this.rng() * options.length),
-      );
-      return options[index];
-    }
-    return evalBehaviour(options, obs);
+  /**
+   * The learned meta-controller: one forward pass over the behaviour head,
+   * sampled while training and argmax while playing. Returns null when the
+   * model has no legal option (cannot happen while `wait` is legal).
+   */
+  private chooseBehaviour(
+    obs: Observation,
+    mask: boolean[],
+  ): BehaviourOption | null {
+    if (!mask.some(Boolean)) return null;
+    const { core, context } = this.modelInputs(obs, "behaviour");
+    const input = encodeModelInput("behaviour", core, context, null);
+    const cache = mlpForward(this.weights.behaviour, input);
+    const logits = [...cache.activations[cache.activations.length - 1]];
+    const chosen = this.sample(
+      "behaviour",
+      obs.tick,
+      [input],
+      logits,
+      mask,
+      MODEL_OUTPUT_DIM.behaviour,
+    );
+    return chosen < 0 ? null : BEHAVIOUR_OPTIONS[chosen];
   }
 
   private runBehaviour(
-    behaviour: Behaviour,
+    behaviour: Exclude<BehaviourOption, typeof WAIT_BEHAVIOUR>,
     obs: Observation,
     player: Player,
     game: Game,
@@ -251,10 +277,9 @@ export class BotAgent implements Agent {
     stride: number,
   ): number {
     const probs = maskedSoftmax(logits, mask);
-    const chosen =
-      this.mode === "train"
-        ? sampleIndex(probs, this.rng)
-        : argmaxMasked(logits, mask);
+    const chosen = this.greedy
+      ? argmaxMasked(logits, mask)
+      : sampleIndex(probs, this.rng);
     if (chosen < 0) return -1;
     this.lastDecisions.push({
       model,
@@ -512,30 +537,3 @@ export const V1_FORBIDDEN_BUILDS: readonly UnitType[] = [
   UnitType.TradeShip,
   UnitType.TransportShip,
 ];
-
-/**
- * Eval-mode behaviour priority: answer an incoming attack, then diplomacy,
- * then the economy, then expand.
- *
- * The threat signal is `incomingAttackCount` — reading the bot's own outgoing
- * troops here (an earlier bug) made it attack on every decision.
- */
-export function evalBehaviour(
-  options: readonly Behaviour[],
-  obs: Observation,
-): Behaviour {
-  const underAttack =
-    obs.self.incomingAttackCount > 0 || obs.self.incomingTroops > 0;
-
-  if (options.includes("attack") && underAttack) return "attack";
-  if (
-    options.includes("diplomacy") &&
-    obs.opponents.some((o) => o.canRejectAlliance)
-  ) {
-    return "diplomacy";
-  }
-  if (options.includes("build")) return "build";
-  if (options.includes("upgrade")) return "upgrade";
-  if (options.includes("attack")) return "attack";
-  return options[0];
-}

@@ -6,6 +6,7 @@ import { BotAgent } from "../../bot/runtime/agent";
 import { createBotGame } from "../../bot/runtime/gameEnv";
 import { playEpisode } from "../../bot/runtime/loop";
 import { gameIDFor } from "../../bot/train/train";
+import { behaviourWeights } from "./fixtures";
 
 const config = compactConfig();
 const TICKS = 800;
@@ -30,14 +31,22 @@ async function play(weights: ReturnType<typeof createWeights>) {
 }
 
 describe("weights actually drive the game", () => {
-  test("two different weight sets produce different games", async () => {
+  test("the learned meta-controller decides what the bot does", async () => {
     // Regression guard for "play gives the same result whatever the weights":
     // that happened when a missing --weights path silently fell back to
     // createWeights(seed), and when the trainer barely moved the parameters.
-    const a = await play(createWeights(1));
-    const b = await play(createWeights(9));
-    expect(a.tiles).not.toBe(b.tiles);
-    expect(a.peakTroops).not.toBe(b.peakTroops);
+    // The controller is a head now, so forcing a different behaviour must
+    // produce a different game.
+    const attacks = await play(behaviourWeights("attack"));
+    const waits = await play(behaviourWeights("wait"));
+    expect(attacks.intents).toBeGreaterThan(waits.intents);
+    expect(attacks.tiles).not.toBe(waits.tiles);
+  }, 120_000);
+
+  test("an untrained controller still produces a legal game", async () => {
+    const stats = await play(createWeights(1));
+    expect(stats.ticks).toBeGreaterThan(0);
+    expect(stats.alive || stats.tiles === 0).toBe(true);
   }, 120_000);
 });
 

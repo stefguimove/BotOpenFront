@@ -65,7 +65,7 @@ describe("model input specs", () => {
     }
   });
 
-  test("only diplomacyAction classifies a single state", () => {
+  test("the state-classifying heads are behaviour and diplomacyAction", () => {
     expect([...LISTWISE_MODELS]).toEqual([
       "attack",
       "build",
@@ -74,10 +74,13 @@ describe("model input specs", () => {
     ]);
     expect(MODEL_INPUT_SPECS.diplomacyAction.candidateDim).toBe(0);
     expect(MODEL_INPUT_SPECS.diplomacyAction.listwise).toBe(false);
+    expect(MODEL_INPUT_SPECS.behaviour.candidateDim).toBe(0);
+    expect(MODEL_INPUT_SPECS.behaviour.listwise).toBe(false);
   });
 
-  test("the target model list has five heads and no ratio", () => {
+  test("the model list has six heads and no ratio", () => {
     expect(MODEL_NAMES).toEqual([
+      "behaviour",
       "attack",
       "build",
       "upgrade",
@@ -235,6 +238,7 @@ describe("golden vectors", () => {
 
 describe("stride", () => {
   test("matches the logits each head emits", () => {
+    expect(MODEL_STRIDE.behaviour).toBe(5); // attack, build, upgrade, diplomacy, wait
     expect(MODEL_STRIDE.attack).toBe(6); // one per ratio bucket
     expect(MODEL_STRIDE.build).toBe(1);
     expect(MODEL_STRIDE.upgrade).toBe(1);

@@ -226,6 +226,24 @@ toute jeune et forte n'a pas le même coût qu'une alliance ancienne et faible.
 |          | 6   | `targetAttacksMe`  | `attackingMe ? 1 : 0`                    |
 |          | 7   | `relativeStrength` | `clamp01(myTroops / (troops_cible + 1))` |
 
+### 6.6 `behaviour` — 16 dims (méta-contrôleur appris)
+
+Décision ajoutée le 2026-11-12 : le choix **quoi faire** n'est plus une règle
+mais une tête, avec `wait` dans l'espace d'action.
+
+| Bloc     | #   | Nom              | Formule                              |
+| -------- | --- | ---------------- | ------------------------------------ |
+| CONTEXTE | 0   | `cityCount`      | `clamp01(cities / 100)`              |
+|          | 1   | `factoryCount`   | `clamp01(factories / 100)`           |
+|          | 2   | `structureCount` | `clamp01(structures / 100)`          |
+|          | 3   | `underAttack`    | `incomingAttacks > 0 ? 1 : 0`        |
+|          | 4   | `attackerCount`  | `clamp01(attaquants distincts / 10)` |
+|          | 5   | `allyCount`      | `clamp01(allies / 10)`               |
+
+Sorties : `[attack, build, upgrade, diplomacy, wait]`, masquées par la
+disponibilité réelle de chaque action ; **`wait` est toujours légal**, sans quoi
+chaque décision serait forcée de produire un intent.
+
 ---
 
 ## 7. Action jointe attaque × ratio

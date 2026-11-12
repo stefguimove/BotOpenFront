@@ -1,6 +1,7 @@
 import type { StampedIntent, Turn } from "@openfront/engine-api/Schemas";
 import type { Game } from "@openfront/engine/game/Game";
 import type { GameRunner } from "@openfront/engine/GameRunner";
+import { BEHAVIOUR_OPTIONS } from "../input/types";
 import type { DecisionRecord } from "./agent";
 import type { Agent } from "./types";
 
@@ -24,6 +25,8 @@ export interface EpisodeStats {
   meanTroopRatio: number;
   /** Intents emitted, by type: the mix that reveals a full-send loop. */
   intentCounts: Record<string, number>;
+  /** Meta-controller choices, by behaviour name (attack, wait, ...). */
+  behaviourCounts: Record<string, number>;
   kills: number;
   deaths: number;
 }
@@ -82,6 +85,7 @@ export function playEpisode(
   let intentCount = 0;
   let peakTroops = 0;
   const intentCounts: Record<string, number> = {};
+  const behaviourCounts: Record<string, number> = {};
   let troopRatioSum = 0;
   let troopRatioSamples = 0;
 
@@ -119,6 +123,11 @@ export function playEpisode(
       intentCount += produced.length;
       for (const intent of produced) {
         intentCounts[intent.type] = (intentCounts[intent.type] ?? 0) + 1;
+      }
+      for (const record of sampled) {
+        if (record.model !== "behaviour") continue;
+        const name = BEHAVIOUR_OPTIONS[record.chosen] ?? "?";
+        behaviourCounts[name] = (behaviourCounts[name] ?? 0) + 1;
       }
       recordRatio(playerOf());
     }
@@ -164,6 +173,7 @@ export function playEpisode(
     meanTroopRatio:
       troopRatioSamples === 0 ? 0 : troopRatioSum / troopRatioSamples,
     intentCounts,
+    behaviourCounts,
     kills: me?.outgoingAttacks().length ?? 0,
     deaths: me?.incomingAttacks().length ?? 0,
   };

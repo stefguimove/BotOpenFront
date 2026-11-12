@@ -214,14 +214,36 @@ iteration 8: ... attack=94% dW=1.1e-3 updated=attack,build,...
 `dW` est la variation absolue moyenne des 3 310 paramètres sur l'itération.
 Sous ~1·10⁻⁴, l'entraînement ne fait rien d'utile.
 
-### 6.4 Ce qui reste structurel
+### 6.4 Méta-contrôleur appris (fait)
 
-Même avec `dW = 8·10⁻⁴`, deux checkpoints d'un même run peuvent produire une
-partie identique : en `play`/`eval`, **le choix du comportement est une règle**
-(`evalBehaviour`), et le modèle ne choisit qu'à l'intérieur (cible, ratio, type
-de bâtiment). La trajectoire est donc largement déterminée par la règle.
+`play`/`eval` étaient dominés par `evalBehaviour`, une priorité de règles
+(attaquer par défaut). Le choix du comportement est devenu une **tête apprise**
+`behaviour` : `attack`, `build`, `upgrade`, `diplomacy`, **`wait`**, masquée par
+la disponibilité réelle de chaque action. C'était la dernière pièce qui rendait
+la partie insensible aux poids.
 
-Rendre `play` réellement sensible aux poids demande de rendre le
-méta-contrôleur apprenant (une sixième tête `behaviour` : attaquer, construire,
-améliorer, diplomatie, ne rien faire). C'est un changement d'architecture, pas
-un réglage, et il n'est pas fait ici.
+Deux conséquences pratiques :
+
+1. **Le bot peut décider de ne rien faire.** `wait` est toujours dans le masque.
+2. **L'évaluation échantillonne la politique** au lieu de prendre l'argmax.
+   C'était nécessaire : entraînée par REINFORCE, la politique est stochastique,
+   et son mode s'est replié sur `wait` après 10 itérations alors que la
+   politique échantillonnée jouait correctement.
+
+   | mode d'évaluation   | part de tuiles | armée | `attack` | récompense |
+   | ------------------- | -------------- | ----- | -------- | ---------- |
+   | argmax (`--greedy`) | 0,00005        | 0,93  | 0 %      | −0,34      |
+   | échantillonnage     | **0,136**      | 0,24  | 83 %     | **+8,24**  |
+
+   `--greedy` reste disponible pour inspecter la politique déterministe.
+
+Le log d'itération montre désormais ce que le contrôleur choisit :
+
+```text
+iteration 10: ... attack=82% act=wait 53%/attack 32%/diplomacy 14%/build 1% dW=9.0e-4
+iteration 10 eval: tileShare=0.13631 army=0.240 act=wait 45%/attack 40%/diplomacy 13% ...
+```
+
+Avec ce contrôleur, deux checkpoints différents d'un même run produisent enfin
+des parties différentes (113 964 vs 116 148 tuiles) : la politique pilote
+réellement le jeu.

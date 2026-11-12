@@ -49,10 +49,11 @@ describe("model dimensions", () => {
     expect(MODEL_NAMES).not.toContain("ratio" as never);
   });
 
-  test("inputs v2 budget is smaller than v1", () => {
-    // v1: 4 927 parameters over six heads; v2 merges ratio into attack.
+  test("the budget stays far below the v1 baseline", () => {
+    // v1 had 4 927 parameters over six heads; the learned meta-controller adds
+    // one small head but ratio was merged into attack.
     expect(totalParams(createWeights(1))).toBeLessThan(4_927);
-    expect(MODEL_NAMES).toHaveLength(5);
+    expect(MODEL_NAMES).toHaveLength(6);
   });
 });
 

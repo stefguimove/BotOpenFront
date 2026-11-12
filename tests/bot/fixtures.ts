@@ -1,5 +1,6 @@
 import { PlayerType, UnitType } from "@openfront/engine-api/game/GameTypes";
 import {
+  BEHAVIOUR_OPTIONS,
   MAX_BUILD_OPTIONS,
   MAX_PLAYER_SLOTS,
   type BuildOption,
@@ -7,7 +8,13 @@ import {
   type OpponentSlot,
   type SelfState,
   type StructureSlot,
+  type BehaviourOption,
 } from "../../bot/input/types";
+import {
+  cloneWeights,
+  createWeights,
+  type AgentWeights,
+} from "../../bot/models/weights";
 
 export function selfState(overrides: Partial<SelfState> = {}): SelfState {
   return {
@@ -125,4 +132,25 @@ export function fullObservation(): Observation {
       buildOption(i % 2 === 0 ? UnitType.City : UnitType.Factory),
     ),
   });
+}
+
+/**
+ * Weights whose behaviour head is forced to `option`.
+ *
+ * The controller is learned, so an untrained net has a fixed preference and a
+ * test that wants an attack to happen must ask for it. The bias dominates any
+ * hidden activation, so the masked argmax returns `option` whenever it is
+ * legal.
+ */
+export function behaviourWeights(
+  option: BehaviourOption,
+  base: AgentWeights = createWeights(1),
+): AgentWeights {
+  const weights = cloneWeights(base);
+  const layer = weights.behaviour.biases.length - 1;
+  weights.behaviour.biases[layer] = new Array<number>(
+    BEHAVIOUR_OPTIONS.length,
+  ).fill(0);
+  weights.behaviour.biases[layer][BEHAVIOUR_OPTIONS.indexOf(option)] = 50;
+  return weights;
 }

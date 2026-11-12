@@ -67,3 +67,8 @@ export function trainingWheelsArg(
   if (!Number.isFinite(ratio) || ratio <= 0) return null;
   return { minTroopRatioOfCap: ratio };
 }
+
+/** `--greedy` plays the argmax instead of sampling the policy. */
+export function greedyArg(args: Args, fallback = false): boolean {
+  return boolArg(args, "greedy", fallback);
+}

@@ -32,6 +32,21 @@ export const CORE_INDEX = {
 /** Discrete attack ratios of the bot's current troops. */
 export const RATIO_BUCKETS = [0.1, 0.2, 1 / 3, 0.5, 0.75, 1] as const;
 
+/**
+ * What the bot does with a decision. The last entry is the important one: the
+ * learned meta-controller must be able to decide to do *nothing*, otherwise a
+ * decision is forced to produce an intent.
+ */
+export const BEHAVIOUR_OPTIONS = [
+  "attack",
+  "build",
+  "upgrade",
+  "diplomacy",
+  "wait",
+] as const;
+export type BehaviourOption = (typeof BEHAVIOUR_OPTIONS)[number];
+export const WAIT_BEHAVIOUR = "wait";
+
 /** Diplomacy action space, in logit order. */
 export const DIPLOMACY_ACTIONS = [
   "allianceRequest",

@@ -5,6 +5,10 @@ import {
   encodeAttackTarget,
 } from "./context/attack";
 import {
+  BEHAVIOUR_CONTEXT_DIM,
+  encodeBehaviourContext,
+} from "./context/behaviour";
+import {
   BUILD_CANDIDATE_DIM,
   BUILD_CONTEXT_DIM,
   encodeBuildCandidate,
@@ -32,8 +36,9 @@ import {
   type StructureSlot,
 } from "./types";
 
-/** The five heads of inputs v2. `ratio` was merged into `attack`. */
+/** The six heads. `ratio` was merged into `attack`; `behaviour` picks the action. */
 export type ModelName =
+  | "behaviour"
   | "attack"
   | "build"
   | "upgrade"
@@ -41,6 +46,7 @@ export type ModelName =
   | "diplomacyTarget";
 
 export const MODEL_NAMES: readonly ModelName[] = [
+  "behaviour",
   "attack",
   "build",
   "upgrade",
@@ -54,6 +60,7 @@ export const MODEL_NAMES: readonly ModelName[] = [
  * logit per ratio bucket, which is what makes the target x ratio action joint.
  */
 export const MODEL_STRIDE: Record<ModelName, number> = {
+  behaviour: 5,
   attack: 6,
   build: 1,
   upgrade: 1,
@@ -90,6 +97,7 @@ function spec(
 }
 
 export const MODEL_INPUT_SPECS: Record<ModelName, ModelInputSpec> = {
+  behaviour: spec("behaviour", false, BEHAVIOUR_CONTEXT_DIM, 0),
   attack: spec("attack", true, ATTACK_CONTEXT_DIM, ATTACK_CANDIDATE_DIM),
   build: spec("build", true, BUILD_CONTEXT_DIM, BUILD_CANDIDATE_DIM),
   upgrade: spec("upgrade", true, UPGRADE_CONTEXT_DIM, UPGRADE_CANDIDATE_DIM),
@@ -131,6 +139,8 @@ export function encodeContext(
   obs: Observation,
 ): readonly number[] {
   switch (model) {
+    case "behaviour":
+      return encodeBehaviourContext(obs.self);
     case "attack":
       return encodeAttackContext(obs.self);
     case "build":

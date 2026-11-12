@@ -21,7 +21,14 @@ import { createBotGame } from "../runtime/gameEnv";
 import { playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { gameIDFor } from "../train/train";
-import { boolArg, numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
+import {
+  boolArg,
+  greedyArg,
+  numArg,
+  parseArgs,
+  strArg,
+  trainingWheelsArg,
+} from "./args";
 import { weightsFingerprint } from "./fingerprint";
 import { loadWeights } from "./weights";
 
@@ -49,6 +56,7 @@ async function main(): Promise<void> {
     mode: "eval",
     seed,
     trainingWheels,
+    greedy: greedyArg(args),
   });
 
   const startMs = 1_700_000_000_000;

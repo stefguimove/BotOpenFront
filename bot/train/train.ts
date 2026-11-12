@@ -133,6 +133,18 @@ export function defaultTrainOptions(
   };
 }
 
+/** "attack 55% / wait 40% / diplomacy 5 %" for the iteration log. */
+export function formatShares(counts: Record<string, number>): string {
+  let total = 0;
+  for (const count of Object.values(counts)) total += count;
+  if (total === 0) return "none";
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .filter(([, count]) => count > 0)
+    .map(([name, count]) => `${name} ${((100 * count) / total).toFixed(0)}%`)
+    .join("/");
+}
+
 /** Share of one intent type among all intents of an iteration. */
 export function intentShare(
   counts: Record<string, number>,
@@ -156,6 +168,8 @@ export interface IterationReport {
   meanTroopIncome: number;
   /** Intents per type across the iteration, the mix that reveals full-send. */
   intentCounts: Record<string, number>;
+  /** Meta-controller choices across the iteration. */
+  behaviourCounts: Record<string, number>;
   /** Share of `attack` intents among all intents, 0-1. */
   attackShare: number;
   /** Largest and mean absolute weight change of this iteration. */
@@ -237,6 +251,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
       let troopRatioSum = 0;
       let troopIncomeSum = 0;
       const intentCounts: Record<string, number> = {};
+      const behaviourCounts: Record<string, number> = {};
       for (let index = 0; index < outcomes.length; index++) {
         const outcome = outcomes[index];
         if (outcome.error !== undefined) {
@@ -259,6 +274,11 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         )) {
           intentCounts[type] = (intentCounts[type] ?? 0) + count;
         }
+        for (const [name, count] of Object.entries(
+          outcome.stats.behaviourCounts ?? {},
+        )) {
+          behaviourCounts[name] = (behaviourCounts[name] ?? 0) + count;
+        }
         episodes += 1;
       }
 
@@ -278,6 +298,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         meanTroopRatio: episodes === 0 ? 0 : troopRatioSum / episodes,
         meanTroopIncome: episodes === 0 ? 0 : troopIncomeSum / episodes,
         intentCounts,
+        behaviourCounts,
         attackShare: intentShare(intentCounts, "attack"),
         weightDelta: delta,
         updatedModels,
@@ -290,6 +311,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
           `army=${report.meanTroopRatio.toFixed(3)} ` +
           `troops/s=${report.meanTroopIncome.toFixed(0)} ` +
           `attack=${(100 * report.attackShare).toFixed(0)}% ` +
+          `act=${formatShares(behaviourCounts)} ` +
           `dW=${delta.mean.toExponential(1)} ` +
           `updated=${updatedModels.join(",") || "none"}`,
       );
@@ -414,6 +436,7 @@ export async function evaluateWeights(
       `eval ${gameID}: tiles=${stats.tiles} ` +
         `share=${stats.tileShare.toFixed(5)} ` +
         `army=${(stats.meanTroopRatio ?? 0).toFixed(3)} ` +
+        `act=${formatShares(stats.behaviourCounts ?? {})} ` +
         `troops/s=${(stats.troopIncomePerSecond ?? 0).toFixed(0)} ` +
         `attack=${(100 * intentShare(stats.intentCounts ?? {}, "attack")).toFixed(0)}% ` +
         `troops=${stats.troops.toFixed(0)}/${stats.maxTroops.toFixed(0)} ` +
