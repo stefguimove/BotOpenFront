@@ -14,27 +14,34 @@ import {
   DECISION_INTERVAL,
   BOT_CLIENT_ID,
   BOT_USERNAME,
-  compactConfig,
-  targetConfig,
+  configFromPreset,
+  describeConfig,
 } from "../config/target";
 import { RandomAgent, ScriptedAgent } from "../eval/baselines";
 import { createBotGame } from "../runtime/gameEnv";
 import { playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { evaluateWeights, gameIDFor } from "../train/train";
-import { numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
+import {
+  configOverridesArg,
+  numArg,
+  parseArgs,
+  strArg,
+  trainingWheelsArg,
+} from "./args";
 import { weightsFingerprint } from "./fingerprint";
 import { loadWeights } from "./weights";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const preset = strArg(args, "config", "target");
-  const config = preset === "compact" ? compactConfig() : targetConfig();
+  const config = configFromPreset(preset, configOverridesArg(args));
   const games = numArg(args, "games", 3);
   const ticks = numArg(args, "episode-ticks", EPISODE_TICKS);
   const interval = numArg(args, "decision-interval", DECISION_INTERVAL);
   const seed = numArg(args, "seed", 1);
   const policy = strArg(args, "policy", "weights");
+  console.log(`game: ${describeConfig(config)}`);
   const saveReplay = args["save-replay"] === true;
   const replayDir = strArg(args, "replay-dir", "records");
 

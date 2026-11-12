@@ -37,6 +37,55 @@ export function compactConfig(overrides: Partial<GameConfig> = {}): GameConfig {
   return targetConfig({ gameMapSize: GameMapSize.Compact, ...overrides });
 }
 
+/** Difficulty names accepted on the command line, case-insensitive. */
+export const DIFFICULTIES: readonly Difficulty[] = [
+  Difficulty.Easy,
+  Difficulty.Medium,
+  Difficulty.Hard,
+  Difficulty.Impossible,
+];
+
+/**
+ * Parses a `--difficulty` value. Throws rather than silently falling back, so a
+ * typo cannot quietly train on a different difficulty than the one asked for.
+ */
+export function parseDifficulty(value: string): Difficulty {
+  const match = DIFFICULTIES.find(
+    (d) => d.toLowerCase() === value.trim().toLowerCase(),
+  );
+  if (match === undefined) {
+    throw new Error(
+      `unknown difficulty "${value}": expected ${DIFFICULTIES.join(", ")}`,
+    );
+  }
+  return match;
+}
+
+/**
+ * The game config a CLI should use: a preset, then whatever the command line
+ * overrides. Every field is explicit so a run states its own scenario.
+ */
+export function configFromPreset(
+  preset: string,
+  overrides: Partial<GameConfig> = {},
+): GameConfig {
+  const base = preset === "compact" ? compactConfig() : targetConfig();
+  return { ...base, ...overrides };
+}
+
+/** One-line description of who is in the game, for the CLI headers. */
+export function describeConfig(config: GameConfig): string {
+  const size =
+    config.gameMapSize === GameMapSize.Compact
+      ? "compact 1024²"
+      : "normal 2048²";
+  return (
+    `${config.gameMap} ${size}, ${config.difficulty}, ` +
+    `${config.bots} tribus + ${String(config.nations)} nations` +
+    (config.randomSpawn ? ", spawn aléatoire" : "")
+  );
+}
+
 export function botStartInfo(
   gameID: string,
   config: GameConfig = targetConfig(),

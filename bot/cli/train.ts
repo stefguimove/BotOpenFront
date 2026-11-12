@@ -10,8 +10,8 @@ import { REWARD_V1 } from "../config/reward";
  */
 import { TRAINING_WHEELS } from "../actions/trainingWheels";
 import {
-  compactConfig,
-  targetConfig,
+  configFromPreset,
+  describeConfig,
   EPISODE_TICKS,
   DECISION_INTERVAL,
 } from "../config/target";
@@ -24,7 +24,14 @@ import {
   saveCheckpoint,
   train,
 } from "../train/train";
-import { boolArg, numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
+import {
+  boolArg,
+  configOverridesArg,
+  numArg,
+  parseArgs,
+  strArg,
+  trainingWheelsArg,
+} from "./args";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -35,7 +42,7 @@ async function main(): Promise<void> {
     episodesPerIteration: numArg(args, "episodes", 10),
     episodeTicks: numArg(args, "episode-ticks", EPISODE_TICKS),
     decisionInterval: numArg(args, "decision-interval", DECISION_INTERVAL),
-    config: preset === "compact" ? compactConfig() : targetConfig(),
+    config: configFromPreset(preset, configOverridesArg(args)),
     seed: numArg(args, "seed", 1),
     workers: numArg(args, "workers", defaultWorkerCount()),
     checkpointDir: strArg(args, "checkpoint-dir", "bot/checkpoints"),
@@ -54,6 +61,7 @@ async function main(): Promise<void> {
     trainingWheels: trainingWheelsArg(args, TRAINING_WHEELS),
   });
 
+  console.log(`game: ${describeConfig(options.config)}`);
   console.log(
     options.trainingWheels === null
       ? "training wheels off: the bot attacks whenever it wants"

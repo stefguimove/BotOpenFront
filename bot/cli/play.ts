@@ -13,8 +13,8 @@ import {
   BOT_CLIENT_ID,
   BOT_USERNAME,
   botStartInfo,
-  compactConfig,
-  targetConfig,
+  configFromPreset,
+  describeConfig,
 } from "../config/target";
 import { BotAgent } from "../runtime/agent";
 import { createBotGame } from "../runtime/gameEnv";
@@ -23,6 +23,7 @@ import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { gameIDFor } from "../train/train";
 import {
   boolArg,
+  configOverridesArg,
   greedyArg,
   numArg,
   parseArgs,
@@ -36,7 +37,7 @@ import { loadWeights } from "./weights";
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const preset = strArg(args, "config", "target");
-  const config = preset === "compact" ? compactConfig() : targetConfig();
+  const config = configFromPreset(preset, configOverridesArg(args));
   const ticks = numArg(args, "ticks", EPISODE_TICKS);
   const interval = numArg(args, "decision-interval", DECISION_INTERVAL);
   const saveReplay = boolArg(args, "save-replay");
@@ -58,6 +59,7 @@ async function main(): Promise<void> {
     gameIDFor(seed, fingerprintEpisode(fingerprint)),
   );
 
+  console.log(`game: ${describeConfig(config)}`);
   const game = await createBotGame({ gameID, config });
   const agent = new BotAgent({
     clientID: game.clientID,

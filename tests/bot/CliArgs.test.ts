@@ -1,9 +1,17 @@
+import { Difficulty } from "@openfront/engine-api/game/GameTypes";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { describe, expect, test } from "vitest";
-import { boolArg, numArg, parseArgs, strArg } from "../../bot/cli/args";
+import {
+  boolArg,
+  configOverridesArg,
+  numArg,
+  parseArgs,
+  strArg,
+} from "../../bot/cli/args";
 import { loadWeights } from "../../bot/cli/weights";
+import { compactConfig, describeConfig } from "../../bot/config/target";
 import { createWeights, toCheckpoint } from "../../bot/models/weights";
 
 describe("parseArgs", () => {
@@ -80,5 +88,66 @@ describe("loadWeights", () => {
     const loaded = loadWeights({ path: "", seed: 7 });
     expect(loaded.source).toContain("seed 7");
     expect(loaded.weights).toEqual(createWeights(7));
+  });
+});
+
+describe("config overrides", () => {
+  test("changes difficulty, tribes and nations", () => {
+    const overrides = configOverridesArg(
+      parseArgs(["--difficulty", "hard", "--tribes", "4", "--nations", "1"]),
+    );
+    expect(overrides).toEqual({
+      difficulty: "Hard",
+      bots: 4,
+      nations: 1,
+    });
+    expect(compactConfig(overrides)).toMatchObject({
+      difficulty: "Hard",
+      bots: 4,
+      nations: 1,
+      gameMapSize: "Compact",
+    });
+  });
+
+  test("accepts case and spaces in the difficulty", () => {
+    expect(
+      configOverridesArg(parseArgs(["--difficulty", "Impossible"])).difficulty,
+    ).toBe("Impossible");
+    expect(
+      configOverridesArg(parseArgs(["--difficulty=medium"])).difficulty,
+    ).toBe("Medium");
+  });
+
+  test("applies nothing when no flag is given", () => {
+    // The preset stays the single source of truth.
+    expect(configOverridesArg(parseArgs([]))).toEqual({});
+  });
+
+  test("rejects a typo instead of silently training elsewhere", () => {
+    expect(() =>
+      configOverridesArg(parseArgs(["--difficulty", "extreme"])),
+    ).toThrow(/unknown difficulty/);
+    expect(() => configOverridesArg(parseArgs(["--tribes", "900"]))).toThrow(
+      /tribes/,
+    );
+    expect(() => configOverridesArg(parseArgs(["--nations", "0"]))).toThrow(
+      /nations/,
+    );
+  });
+
+  test("--no-random-spawn turns random spawns off", () => {
+    expect(
+      configOverridesArg(parseArgs(["--no-random-spawn"])).randomSpawn,
+    ).toBe(false);
+  });
+
+  test("describeConfig states the whole composition", () => {
+    expect(
+      describeConfig(
+        compactConfig({ difficulty: Difficulty.Hard, bots: 4, nations: 1 }),
+      ),
+    ).toBe(
+      "The Box compact 1024², Hard, 4 tribus + 1 nations, spawn aléatoire",
+    );
   });
 });

@@ -1556,6 +1556,26 @@ npm run start:client    # viewer sur http://localhost:9000/#replay-viewer=<gameI
 `--config target` = TheBox 2048² (config cible) ; `--config compact` = 1024²
 (curriculum/entraînement).
 
+La composition de la partie se règle sans toucher au code, sur `bot:train`,
+`bot:play` et `bot:eval` :
+
+| Argument            | Valeurs                                | Défaut (preset) |
+| ------------------- | -------------------------------------- | --------------- |
+| `--difficulty D`    | `easy`, `medium`, `hard`, `impossible` | `easy`          |
+| `--tribes N`        | 0–400 (bots moteur, « tribus »)        | `10`            |
+| `--nations N`       | 1–400                                  | `2`             |
+| `--no-random-spawn` | —                                      | spawn aléatoire |
+
+Une valeur invalide **lève une erreur** au lieu de retomber silencieusement sur
+le preset, et chaque exécution affiche la composition réelle :
+
+```text
+game: The Box compact 1024², Impossible, 3 tribus + 2 nations, spawn aléatoire
+```
+
+La config est embarquée dans le record, donc un replay rejoue exactement la même
+composition.
+
 ### 21.2 Fichiers
 
 | Module                       | Rôle                                                          |
