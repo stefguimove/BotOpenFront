@@ -21,8 +21,6 @@
  * spending does not reduce it: the term measures what the bot *earned*, not
  * what it kept.
  */
-import { ARMY_FLOOR_RATIO } from "../actions/attackPolicy";
-
 export interface RewardParams {
   /**
    * Terminal weight on log1p(total gold earned). Not a per-second rate: the
@@ -72,7 +70,14 @@ export const REWARD_V2: RewardParams = {
   // potential but is felt at once.
   cLowArmy: 0.02,
   // Must equal ARMY_FLOOR_RATIO: the mask sizes attacks so they never cross it.
-  lowArmyRatio: ARMY_FLOOR_RATIO,
+  // Deliberately ABOVE the mask floor (18 %): the mask is a hard safety limit,
+  // this is the shaping target. They used to be the same number, which made
+  // the penalty inert — the mask pins the army at 18 %, so the penalty could
+  // never fire, troop income stayed constant, and the dense reward was
+  // therefore exactly zero on almost every decision. Measured consequence: a
+  // fresh policy and a 6-generation one both sat at army=0.20 and both
+  // reached tileShare 0.12, i.e. training did nothing.
+  lowArmyRatio: 0.4,
   lowArmyCap: 3,
   clip: 1,
   gamma: 1,

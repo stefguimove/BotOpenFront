@@ -18,7 +18,6 @@ import {
   MODEL_NAMES,
   createWeights,
   fromCheckpoint,
-  toCheckpoint,
   totalParams,
   type AgentWeights,
   type ModelName,
@@ -174,7 +173,7 @@ export function formatGameLine(
   },
 ): string {
   const outcome =
-    stats.winner === "bot" ? "WIN " : stats.alive ? "loss" : "dead";
+    stats.winner === "bot" ? "WIN" : stats.alive ? "loss" : "dead";
   const s = stats.structureCounts;
   return (
     `${gameID} ${outcome} ` +
@@ -561,7 +560,6 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
 
 /** One episode after another, in this thread. */
 async function sequentially(tasks: readonly EpisodeTask[]) {
-  const { runEpisode } = await import("./episode");
   const out = [];
   for (const task of tasks) {
     const run = await runEpisode(task);
@@ -603,18 +601,12 @@ export async function evaluateWeights(
     log: (message: string) => void;
   },
 ): Promise<{
-  shares: number[];
-  rewards: number[];
-  troopRatios: number[];
-  troopIncomes: number[];
-  attackShares: number[];
   summary: EvalSummary;
 }> {
   const shares: number[] = [];
   const rewards: number[] = [];
   const troopRatios: number[] = [];
   const troopIncomes: number[] = [];
-  const attackShares: number[] = [];
   const ticks: number[] = [];
   const winTicks: number[] = [];
   const behaviourCounts: Record<string, number> = {};
@@ -635,6 +627,9 @@ export async function evaluateWeights(
       trainingWheels: options.trainingWheels,
     });
     const stats = run.result.stats;
+    if (run.result.error !== undefined) {
+      throw new Error(`eval episode ${gameID} failed: ${run.result.error}`);
+    }
     shares.push(stats.tileShare);
     ticks.push(stats.ticks);
     if (stats.winner === "bot") {
@@ -651,7 +646,6 @@ export async function evaluateWeights(
     rewards.push(run.steps.reduce((sum, s) => sum + s.reward, 0));
     troopRatios.push(stats.meanTroopRatio ?? 0);
     troopIncomes.push(stats.troopIncomePerSecond ?? 0);
-    attackShares.push(intentShare(stats.intentCounts ?? {}, "attack"));
     options.log(
       `eval ${gameID}: tiles=${stats.tiles} ` +
         `share=${stats.tileShare.toFixed(5)} ` +
@@ -701,14 +695,5 @@ export async function evaluateWeights(
     behaviourCounts,
     intentCounts,
   };
-  return {
-    shares,
-    rewards,
-    troopRatios,
-    troopIncomes,
-    attackShares,
-    summary,
-  };
+  return { summary };
 }
-
-export { toCheckpoint };

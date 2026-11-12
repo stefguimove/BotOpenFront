@@ -49,11 +49,13 @@ describe("attack sizing", () => {
     expect(attackRatioAllowed(0.5, 1_000, 0)).toBe(true);
   });
 
-  test("the floor is the same number everywhere", () => {
-    // Mask, reward and wheels must not drift apart.
-    expect(REWARD_V2.lowArmyRatio).toBe(ARMY_FLOOR_RATIO);
+  test("the shaping floors sit above the mask floor, in order", () => {
+    // Mask floor = hard safety, penalty and wheels = what the bot is pushed
+    // toward. If the penalty sat on the mask floor it could never fire,
+    // because the mask itself pins the army there.
     expect(TRAINING_WHEELS.minTroopRatioOfCap).toBeGreaterThanOrEqual(
       ARMY_FLOOR_RATIO,
     );
+    expect(REWARD_V2.lowArmyRatio).toBeGreaterThan(ARMY_FLOOR_RATIO);
   });
 });

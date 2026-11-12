@@ -1,5 +1,5 @@
 import { REF } from "../features";
-import { clamp01, safe } from "../normalize";
+import { clamp01, logScale, safe } from "../normalize";
 import type { SelfState } from "../types";
 
 /**
@@ -22,8 +22,14 @@ export const BEHAVIOUR_CONTEXT = {
   troopsRank: 7,
   tilesRank: 8,
   tileShare: 9,
+  /**
+   * Gold in the bank. Added after a run where `build` was chosen on 1 % of
+   * decisions: the controller could see the *rate* (in the core) but not the
+   * *balance*, so it had no way to know a city was affordable.
+   */
+  gold: 10,
 } as const;
-export const BEHAVIOUR_CONTEXT_DIM = 10;
+export const BEHAVIOUR_CONTEXT_DIM = 11;
 
 export function encodeBehaviourContext(self: SelfState): number[] {
   return [
@@ -38,5 +44,6 @@ export function encodeBehaviourContext(self: SelfState): number[] {
     clamp01(safe(self.troopsRank)),
     clamp01(safe(self.tilesRank)),
     clamp01(safe(self.tiles) / Math.max(1, safe(self.totalLandTiles))),
+    logScale(safe(self.gold), REF.gold),
   ];
 }

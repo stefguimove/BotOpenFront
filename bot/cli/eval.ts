@@ -106,10 +106,8 @@ async function main(): Promise<void> {
     replayDir,
     log: (message) => console.log(message),
   });
-  const mean =
-    result.shares.reduce((a, b) => a + b, 0) /
-    Math.max(1, result.shares.length);
-  console.log(`mean tile share: ${mean.toFixed(5)}`);
+  const { summary } = result;
+  console.log(`mean tile share: ${summary.tileShare.toFixed(5)}`);
 }
 
 void main().catch((error) => {

@@ -26,6 +26,8 @@ export const MODEL_OUTPUT_DIM: Record<ModelName, number> = {
 export type AgentWeights = Record<ModelName, MlpParams>;
 
 /**
+ * 6: `behaviour` sees the gold balance, and the shaping floor moved from the
+ *    mask's 18 % to 40 % (see `REWARD_V2.lowArmyRatio`).
  * 5: richer inputs (standings in `behaviour`, combat terms in `attack`,
  *    marginal values in `build`/`upgrade`), so every layer shape changed again.
  * 4: the meta-controller became a learned head (`behaviour`), so there are six
@@ -34,7 +36,7 @@ export type AgentWeights = Record<ModelName, MlpParams>;
  *    (BOT_REWARD_V2.md). Shapes were unchanged then, but a v2 checkpoint had
  *    learned a different feature there, so loading it silently would be wrong.
  */
-export const CHECKPOINT_VERSION = 5;
+export const CHECKPOINT_VERSION = 6;
 
 export function createWeights(seed = 1): AgentWeights {
   const out = {} as AgentWeights;

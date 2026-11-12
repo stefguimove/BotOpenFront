@@ -199,10 +199,12 @@ describe("EpisodeRewards", () => {
     chosen: 0,
     probs: [1],
   });
+  // A healthy army (60 % of the cap): the low-army term must stay silent, or
+  // it would add a constant to every interval and hide the potential delta.
   const sample = (troopIncome: number): RewardSample => ({
     goldEarned: 0,
     troopIncome,
-    troops: 10_000,
+    troops: 30_000,
     maxTroops: 50_000,
   });
   const incomeDelta = (from: number, to: number): number =>

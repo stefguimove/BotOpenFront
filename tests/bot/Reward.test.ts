@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { ARMY_FLOOR_RATIO } from "../../bot/actions/attackPolicy";
 import {
   createRewardState,
   potentialOf,
@@ -7,7 +8,11 @@ import {
   terminalReward,
 } from "../../bot/config/reward";
 
-const ARMY = { troops: 200_000, maxTroops: 800_000 };
+/**
+ * A healthy army: 62.5 % of the cap, above the 40 % shaping floor, so the
+ * low-army term is silent unless a test asks for it.
+ */
+const ARMY = { troops: 500_000, maxTroops: 800_000 };
 
 function step(
   state: ReturnType<typeof createRewardState>,
@@ -32,7 +37,7 @@ describe("potentialOf", () => {
 });
 
 describe("stepReward", () => {
-  test("a steady income is worth exactly zero", () => {
+  test("a steady income is worth exactly zero above the floor", () => {
     const state = createRewardState(10_000, 1_000);
     for (let i = 0; i < 50; i++) {
       expect(step(state, 10_000, 1_000).reward).toBe(0);
@@ -74,14 +79,15 @@ describe("stepReward", () => {
       small,
       REWARD_V2,
       { goldEarned: 0, troopIncome: 3_000 },
-      // Both armies sit above the 18 % floor, so only the income terms act.
-      { troops: 500_000, maxTroops: 600_000 },
+      // Both armies sit above the 40 % shaping floor, so the low-army term is
+      // silent and only the income terms can differ — and they do not.
+      { troops: 400_000, maxTroops: 600_000 },
     );
     const b = stepReward(
       big,
       REWARD_V2,
       { goldEarned: 0, troopIncome: 3_000 },
-      { troops: 500_000, maxTroops: 2_000_000 },
+      { troops: 400_000, maxTroops: 800_000 },
     );
     expect(a.reward).toBeCloseTo(b.reward, 12);
   });
@@ -117,11 +123,16 @@ describe("stepReward", () => {
 });
 
 describe("low-army penalty", () => {
-  test("starts at 18 % of the cap", () => {
+  test("starts at 40 % of the cap, above the mask floor", () => {
+    // The mask refuses attacks that would take the army under 18 %; this term
+    // is the shaping target on top of it, so it must sit higher — otherwise
+    // the mask pins the army and the term never fires (which is exactly what
+    // made the dense reward inert).
     const floor = REWARD_V2.lowArmyRatio * ARMY.maxTroops;
     const atFloor = createRewardState(0, 1_000);
     const below = createRewardState(0, 1_000);
-    expect(REWARD_V2.lowArmyRatio).toBe(0.18);
+    expect(REWARD_V2.lowArmyRatio).toBe(0.4);
+    expect(ARMY_FLOOR_RATIO).toBeLessThan(REWARD_V2.lowArmyRatio);
     expect(
       stepReward(
         atFloor,
