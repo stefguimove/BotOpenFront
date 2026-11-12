@@ -1,4 +1,8 @@
-import type { StampedIntent, Turn } from "@openfront/engine-api/Schemas";
+import type {
+  StampedIntent,
+  Turn,
+  Winner,
+} from "@openfront/engine-api/Schemas";
 import type { Game } from "@openfront/engine/game/Game";
 import type { GameRunner } from "@openfront/engine/GameRunner";
 import { BEHAVIOUR_OPTIONS } from "../input/types";
@@ -11,6 +15,8 @@ export interface EpisodeStats {
   intents: number;
   alive: boolean;
   winner: "bot" | "other" | "none";
+  /** The engine's own winner value, for the game record. */
+  winnerInfo: Winner;
   tiles: number;
   tileShare: number;
   troops: number;
@@ -70,6 +76,8 @@ export interface EpisodeBot {
   clientID: string;
   hashes: Map<number, number>;
   error?: string;
+  /** The engine's winner, when the game has been decided. */
+  winner?: Winner;
 }
 
 export function playEpisode(
@@ -84,6 +92,7 @@ export function playEpisode(
   let decisionCount = 0;
   let intentCount = 0;
   let peakTroops = 0;
+  let winnerInfo: Winner = undefined;
   const intentCounts: Record<string, number> = {};
   const behaviourCounts: Record<string, number> = {};
   let troopRatioSum = 0;
@@ -146,6 +155,7 @@ export function playEpisode(
     options.hooks?.onTick?.(game, tick);
   }
 
+  winnerInfo = bot.winner;
   const me = playerOf();
   const winner = game.getWinner();
   const total = game.totalLandTiles();
@@ -157,6 +167,7 @@ export function playEpisode(
     alive: me !== null && me.isAlive(),
     winner:
       winner === null ? "none" : me !== null && winner === me ? "bot" : "other",
+    winnerInfo: winnerInfo ?? undefined,
     tiles,
     tileShare: total > 0 ? tiles / total : 0,
     troops: me?.troops() ?? 0,
@@ -179,4 +190,10 @@ export function playEpisode(
   };
 
   return { stats, turns, error: bot.error, decisions };
+}
+
+/** Human-readable form of an engine winner value, for logs. */
+export function describeWinner(winner: Winner): string {
+  if (winner === undefined || winner === null) return "none";
+  return `${winner[0]}:${winner[1]}`;
 }

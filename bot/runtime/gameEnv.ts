@@ -3,10 +3,11 @@ import type {
   ErrorUpdate,
   GameUpdateViewData,
   HashUpdate,
+  WinUpdate,
 } from "@openfront/engine-api/game/GameUpdates";
 import { GameUpdateType } from "@openfront/engine-api/game/GameUpdates";
 import type { MapManifest } from "@openfront/engine-api/game/MapFiles";
-import type { GameConfig } from "@openfront/engine-api/Schemas";
+import type { GameConfig, Winner } from "@openfront/engine-api/Schemas";
 import type { Game } from "@openfront/engine/game/Game";
 import {
   createGameRunner,
@@ -92,6 +93,12 @@ export interface BotGame {
   hashes: Map<number, number>;
   /** First engine error, if any. */
   error: string | undefined;
+  /**
+   * The engine's winner, once a Win update has been seen. It is a `[kind, id]`
+   * tuple, not the bot's own view: the record needs the engine's value so a
+   * replay can state the outcome.
+   */
+  winner: Winner | undefined;
   mapSize: GameMapSize;
 }
 
@@ -115,6 +122,7 @@ export async function createBotGame(
 
   const hashes = new Map<number, number>();
   let error: string | undefined;
+  let winner: Winner | undefined;
 
   const runner = await createGameRunner(start, clientID, mapFiles, (update) => {
     if ("errMsg" in update) {
@@ -125,6 +133,9 @@ export async function createBotGame(
     for (const hash of update.updates[GameUpdateType.Hash] as HashUpdate[]) {
       hashes.set(hash.tick, hash.hash);
     }
+    winner ??= (
+      update.updates[GameUpdateType.Win] as WinUpdate[] | undefined
+    )?.[0]?.winner;
     options.onUpdate?.(update);
   });
 
@@ -133,7 +144,13 @@ export async function createBotGame(
     game: runner.game,
     clientID,
     hashes,
-    error,
+    // A getter, not a snapshot: the Win update arrives during a later tick.
+    get winner() {
+      return winner;
+    },
+    get error() {
+      return error;
+    },
     mapSize: config.gameMapSize,
   };
 }

@@ -8,11 +8,18 @@ import {
 } from "@openfront/shared/SharedUtil";
 import { WireGameStartInfoSchema } from "@openfront/shared/WireSchemas";
 import { describe, expect, test } from "vitest";
+import {
+  fingerprintEpisode,
+  weightsFingerprint,
+} from "../../bot/cli/fingerprint";
 import { compactConfig } from "../../bot/config/target";
 import { ScriptedAgent } from "../../bot/eval/baselines";
+import { createWeights } from "../../bot/models/weights";
+import { BotAgent } from "../../bot/runtime/agent";
 import { createBotGame, CachedMapLoader } from "../../bot/runtime/gameEnv";
 import { playEpisode } from "../../bot/runtime/loop";
 import { buildGameRecord } from "../../bot/runtime/record";
+import { gameIDFor } from "../../bot/train/train";
 
 /**
  * The replay viewer re-simulates the record with the engine and stops at the
@@ -97,5 +104,126 @@ describe("saved replay", () => {
     for (const [tick, hash] of recorded) {
       expect(computed.get(tick)).toBe(hash);
     }
+  });
+});
+
+describe("record fidelity", () => {
+  test("a won game records its winner", { timeout: 120_000 }, async () => {
+    // Without `info.winner` the record never states the outcome, so a viewer
+    // that trusts the record shows "no winner" for a game the CLI reports as
+    // won.
+    const config = compactConfig();
+    const gameID = gameIDFor(3, 7);
+    const game = await createBotGame({ gameID, config });
+    const result = playEpisode(game, {
+      maxTicks: 20_000,
+      decisionInterval: 10,
+      agent: new BotAgent({
+        clientID: game.clientID,
+        weights: createWeights(1),
+        mode: "eval",
+        seed: 3,
+      }),
+    });
+    expect(result.stats.winner).toBe("bot");
+    expect(result.stats.winnerInfo).toEqual(["player", game.clientID]);
+
+    const record = buildGameRecord({
+      gameID,
+      config,
+      players: [
+        {
+          clientID: "BOT00001",
+          username: "Bot",
+          clanTag: null,
+          isLobbyCreator: true,
+        },
+      ],
+      turns: result.turns,
+      startMs: 1_700_000_000_000,
+      endMs: 1_700_000_000_000 + result.stats.ticks * 100,
+      winner: result.stats.winnerInfo,
+    });
+    expect(record.info.winner).toEqual(["player", "BOT00001"]);
+  });
+
+  test(
+    "re-simulating a record reproduces the recorded winner",
+    { timeout: 120_000 },
+    async () => {
+      const config = compactConfig();
+      const gameID = gameIDFor(3, 8);
+      const game = await createBotGame({ gameID, config });
+      const result = playEpisode(game, {
+        maxTicks: 20_000,
+        decisionInterval: 10,
+        agent: new BotAgent({
+          clientID: game.clientID,
+          weights: createWeights(1),
+          mode: "eval",
+          seed: 3,
+        }),
+      });
+      const record = buildGameRecord({
+        gameID,
+        config,
+        players: [
+          {
+            clientID: "BOT00001",
+            username: "Bot",
+            clanTag: null,
+            isLobbyCreator: true,
+          },
+        ],
+        turns: result.turns,
+        startMs: 1_700_000_000_000,
+        endMs: 1_700_000_000_000 + result.stats.ticks * 100,
+        winner: result.stats.winnerInfo,
+      });
+
+      const startInfo = toWireGameStartInfo(
+        WireGameStartInfoSchema.parse(record.info),
+      );
+      const { turns } = decompressGameRecord({ ...record });
+      const mapFiles = await loadMapFiles(
+        new CachedMapLoader(),
+        startInfo.config.gameMap,
+        startInfo.config.gameMapSize,
+      );
+      let winner: unknown;
+      const runner = await createGameRunner(
+        startInfo,
+        undefined,
+        mapFiles,
+        (u) => {
+          if ("errMsg" in u) return;
+          winner ??= u.updates[GameUpdateType.Win]?.[0]?.winner;
+        },
+      );
+      for (const turn of turns) {
+        runner.addTurn(turn);
+        if (!runner.executeNextTick()) break;
+        if (winner !== undefined) break;
+      }
+      expect(winner).toEqual(result.stats.winnerInfo);
+    },
+  );
+
+  test("the default game id changes when the weights do", () => {
+    // The id names the record and keys the viewer's replay store, so a constant
+    // id made a browser replay a stored game from another checkpoint.
+    const a = gameIDFor(
+      1,
+      fingerprintEpisode(weightsFingerprint(createWeights(1))),
+    );
+    const b = gameIDFor(
+      1,
+      fingerprintEpisode(weightsFingerprint(createWeights(2))),
+    );
+    expect(a).not.toBe(b);
+    // Same weights and seed stay reproducible.
+    expect(
+      gameIDFor(1, fingerprintEpisode(weightsFingerprint(createWeights(1)))),
+    ).toBe(a);
   });
 });

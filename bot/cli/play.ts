@@ -18,7 +18,7 @@ import {
 } from "../config/target";
 import { BotAgent } from "../runtime/agent";
 import { createBotGame } from "../runtime/gameEnv";
-import { playEpisode } from "../runtime/loop";
+import { describeWinner, playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { gameIDFor } from "../train/train";
 import {
@@ -30,7 +30,7 @@ import {
   strArg,
   trainingWheelsArg,
 } from "./args";
-import { weightsFingerprint } from "./fingerprint";
+import { fingerprintEpisode, weightsFingerprint } from "./fingerprint";
 import { loadWeights } from "./weights";
 
 async function main(): Promise<void> {
@@ -44,11 +44,19 @@ async function main(): Promise<void> {
   const seed = seedArg(args);
   // Play measures the unaided policy: no wheels unless asked for.
   const trainingWheels = trainingWheelsArg(args, null);
-  const gameID = strArg(args, "game-id", gameIDFor(seed, 1));
   const { weights, source: weightsSource } = loadWeights({
     path: strArg(args, "weights", ""),
     seed,
   });
+  const fingerprint = weightsFingerprint(weights);
+  // The id seeds the scenario and names the record. Folding the weights in
+  // keeps each distinct run's replay separate, so the viewer cannot replay a
+  // stored game from another checkpoint. `--game-id` pins it for A/B runs.
+  const gameID = strArg(
+    args,
+    "game-id",
+    gameIDFor(seed, fingerprintEpisode(fingerprint)),
+  );
 
   const game = await createBotGame({ gameID, config });
   const agent = new BotAgent({
@@ -74,7 +82,7 @@ async function main(): Promise<void> {
   console.log(
     `seed=${seed} game=${gameID} ticks=${stats.ticks} ` +
       `decisions=${stats.decisions} intents=${stats.intents} ` +
-      `weights=${weightsSource} fp=${weightsFingerprint(weights)}`,
+      `weights=${weightsSource} fp=${fingerprint}`,
   );
   console.log(
     `alive=${stats.alive} winner=${stats.winner} tiles=${stats.tiles} ` +
@@ -102,9 +110,15 @@ async function main(): Promise<void> {
       startMs,
       endMs: startMs + stats.ticks * 100,
       lobbyCreatedAt: botStartInfo(gameID, config).lobbyCreatedAt,
+      // Without it the record never states the outcome, so a viewer cannot
+      // show the result of a game it did not simulate itself.
+      winner: stats.winnerInfo,
     });
     const file = writeGameRecord(record, replayDir);
-    console.log(`replay ${file} (${record.turns.length} turns)`);
+    console.log(
+      `replay ${file} (${record.turns.length} turns, ` +
+        `winner=${describeWinner(stats.winnerInfo)})`,
+    );
   }
 }
 

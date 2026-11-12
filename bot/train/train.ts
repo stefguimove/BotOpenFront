@@ -457,6 +457,7 @@ export async function evaluateWeights(
         turns: run.result.turns as Turn[],
         startMs: 1_700_000_000_000,
         endMs: 1_700_000_000_000 + run.result.stats.ticks * 100,
+        winner: run.result.stats.winnerInfo,
       });
       const file = writeGameRecord(record, options.replayDir);
       options.log(`replay ${file}`);

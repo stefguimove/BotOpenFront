@@ -31,3 +31,18 @@ export function weightsFingerprint(weights: AgentWeights): string {
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
+
+/**
+ * Episode number that encodes a fingerprint, for `gameIDFor`.
+ *
+ * The game id seeds the whole scenario *and* names the record file, and the
+ * replay viewer keeps processed replays in the browser keyed by
+ * `gameID + build`. With a constant id (the old default), every run of
+ * `bot:play` reused the same id, so a browser that had already watched a game
+ * kept replaying **that** stored game whatever the new weights played.
+ * Folding the weights into the episode keeps ids unique per (seed, weights)
+ * while staying reproducible.
+ */
+export function fingerprintEpisode(fingerprint: string): number {
+  return parseInt(fingerprint, 16) % 100_000;
+}
