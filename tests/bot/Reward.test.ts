@@ -9,10 +9,10 @@ import {
 } from "../../bot/config/reward";
 
 /**
- * A healthy army: 62.5 % of the cap, above the 40 % shaping floor, so the
- * low-army term is silent unless a test asks for it.
+ * A healthy army inside the band: 25 % of the cap, so the army term is silent
+ * unless a test asks for it.
  */
-const ARMY = { troops: 500_000, maxTroops: 800_000 };
+const ARMY = { troops: 200_000, maxTroops: 800_000 };
 
 function step(
   state: ReturnType<typeof createRewardState>,
@@ -122,56 +122,109 @@ describe("stepReward", () => {
   });
 });
 
-describe("low-army penalty", () => {
-  test("starts at 40 % of the cap, above the mask floor", () => {
-    // The mask refuses attacks that would take the army under 18 %; this term
-    // is the shaping target on top of it, so it must sit higher — otherwise
-    // the mask pins the army and the term never fires (which is exactly what
-    // made the dense reward inert).
-    const floor = REWARD_V2.lowArmyRatio * ARMY.maxTroops;
-    const atFloor = createRewardState(0, 1_000);
-    const below = createRewardState(0, 1_000);
-    expect(REWARD_V2.lowArmyRatio).toBe(0.4);
-    expect(ARMY_FLOOR_RATIO).toBeLessThan(REWARD_V2.lowArmyRatio);
-    expect(
-      stepReward(
-        atFloor,
-        REWARD_V2,
-        { goldEarned: 0, troopIncome: 1_000 },
-        { troops: floor, maxTroops: ARMY.maxTroops },
-      ).lowArmy,
-    ).toBe(0);
-    expect(
-      stepReward(
-        below,
-        REWARD_V2,
-        { goldEarned: 0, troopIncome: 1_000 },
-        { troops: floor - 1, maxTroops: ARMY.maxTroops },
-      ).lowArmy,
-    ).toBeLessThan(0);
+/** Troops per second per tick, the shape `Config.troopIncreaseRate` returns. */
+function troopRate(ratio: number, cap: number): number {
+  return (10 + Math.pow(ratio * cap, 0.73) / 4) * (1 - ratio);
+}
+
+/** The army ratio that maximises the engine's troop income, brute force. */
+function incomeOptimumRatio(cap: number): number {
+  let best = 0;
+  let bestValue = -Infinity;
+  for (let i = 1; i < 1_000; i++) {
+    const value = troopRate(i / 1_000, cap);
+    if (value > bestValue) {
+      bestValue = value;
+      best = i / 1_000;
+    }
+  }
+  return best;
+}
+
+describe("army band", () => {
+  const CAP = ARMY.maxTroops;
+  const at = (ratio: number) => ({ troops: ratio * CAP, maxTroops: CAP });
+  const band = () =>
+    stepReward(
+      createRewardState(0, 1_000),
+      REWARD_V2,
+      { goldEarned: 0, troopIncome: 1_000 },
+      undefined,
+    );
+
+  test("its free zone sits between the mask floor and the income optimum", () => {
+    const low = REWARD_V2.armyTarget - REWARD_V2.armyBand;
+    const high = REWARD_V2.armyTarget + REWARD_V2.armyBand;
+    // Above the attack mask's floor, or the mask would pin the army inside the
+    // zone and the term could never fire (the bug that made it inert before).
+    expect(low).toBeGreaterThan(ARMY_FLOOR_RATIO);
+    // Below the income optimum, or the term would only repeat what the troop
+    // potential already rewards. The optimum is ~0.42 for every cap.
+    expect(high).toBeLessThan(incomeOptimumRatio(CAP));
+    expect(incomeOptimumRatio(2_000_000)).toBeGreaterThan(high);
+    expect(incomeOptimumRatio(12_000_000)).toBeGreaterThan(high);
+  });
+
+  test("pays nothing inside the band", () => {
+    for (const ratio of [0.2, 0.25, 0.3]) {
+      expect(
+        stepReward(
+          createRewardState(0, 1_000),
+          REWARD_V2,
+          { goldEarned: 0, troopIncome: 1_000 },
+          at(ratio),
+        ).army,
+      ).toBe(0);
+    }
+  });
+
+  test("punishes hoarding above the band as well as an empty army", () => {
+    const empty = stepReward(
+      createRewardState(0, 1_000),
+      REWARD_V2,
+      { goldEarned: 0, troopIncome: 1_000 },
+      at(0),
+    ).army;
+    const hoard = stepReward(
+      createRewardState(0, 1_000),
+      REWARD_V2,
+      { goldEarned: 0, troopIncome: 1_000 },
+      at(0.45),
+    ).army;
+    expect(empty).toBeLessThan(0);
+    expect(hoard).toBeLessThan(0);
+    // Both are maximally far (>= 3 bands), so both pay the same.
+    expect(hoard).toBeCloseTo(empty, 10);
+  });
+
+  test("grows with the distance from the band", () => {
+    const oneBand = stepReward(
+      createRewardState(0, 1_000),
+      REWARD_V2,
+      { goldEarned: 0, troopIncome: 1_000 },
+      at(0.35),
+    ).army;
+    const twoBands = stepReward(
+      createRewardState(0, 1_000),
+      REWARD_V2,
+      { goldEarned: 0, troopIncome: 1_000 },
+      at(0.4),
+    ).army;
+    expect(oneBand).toBeLessThan(0);
+    expect(twoBands).toBeLessThan(oneBand);
   });
 
   test("costs nothing when the army state is unknown", () => {
-    const state = createRewardState(0, 1_000);
-    expect(
-      stepReward(state, REWARD_V2, { goldEarned: 0, troopIncome: 1_000 })
-        .lowArmy,
-    ).toBe(0);
+    expect(band().army).toBe(0);
   });
 
-  test("an empty army pays the full deficit, capped per episode", () => {
+  test("is capped per episode", () => {
     const state = createRewardState(0, 1_000);
-    const first = step(state, 0, 1_000, { troops: 0, maxTroops: 100_000 });
-    expect(first.lowArmy).toBeCloseTo(-REWARD_V2.cLowArmy, 10);
-
-    for (let i = 0; i < 2_000; i++) {
-      step(state, 0, 1_000, { troops: 0, maxTroops: 100_000 });
+    for (let i = 0; i < 5_000; i++) {
+      step(state, 0, 1_000, at(0.9));
     }
-    expect(state.lowArmyPenalty).toBeCloseTo(REWARD_V2.lowArmyCap, 10);
-  });
-
-  test("is bounded so it cannot dominate the income terms", () => {
-    expect(REWARD_V2.lowArmyCap).toBeLessThanOrEqual(3);
+    expect(state.armyPenalty).toBeCloseTo(REWARD_V2.armyPenaltyCap, 10);
+    expect(REWARD_V2.armyPenaltyCap).toBeLessThanOrEqual(6);
   });
 });
 

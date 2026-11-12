@@ -26,8 +26,8 @@ export const MODEL_OUTPUT_DIM: Record<ModelName, number> = {
 export type AgentWeights = Record<ModelName, MlpParams>;
 
 /**
- * 6: `behaviour` sees the gold balance, and the shaping floor moved from the
- *    mask's 18 % to 40 % (see `REWARD_V2.lowArmyRatio`).
+ * 6: `behaviour` sees the gold balance, and the shaping target moved from the
+ *    mask's 18 % to a band around 25 % (see `REWARD_V2.armyTarget`).
  * 5: richer inputs (standings in `behaviour`, combat terms in `attack`,
  *    marginal values in `build`/`upgrade`), so every layer shape changed again.
  * 4: the meta-controller became a learned head (`behaviour`), so there are six

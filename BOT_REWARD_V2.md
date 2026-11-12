@@ -9,14 +9,14 @@ aux tuiles et à `maxTroops`.
 
 ## 1. Ce qui change
 
-| Point                       | v1                            | v2                                              |
-| --------------------------- | ----------------------------- | ----------------------------------------------- |
-| Tuiles                      | `Δtuiles / 1000` par décision | **plus rémunérées**                             |
-| `maxTroops`                 | terme terminal `0.5 · log`    | **plus rémunéré**                               |
-| Part de tuiles (terminal)   | `w_end_tiles · tileShare`     | **supprimé**                                    |
-| Gain de troupes par seconde | absent                        | **potentiel `log1p(troopIncome)`**              |
-| Or                          | potentiel `log1p(goldEarned)` | conservé                                        |
-| Armée basse                 | malus plafonné à 3            | conservé, et **branché sur le masque d'action** |
+| Point                       | v1                            | v2                                             |
+| --------------------------- | ----------------------------- | ---------------------------------------------- |
+| Tuiles                      | `Δtuiles / 1000` par décision | **plus rémunérées**                            |
+| `maxTroops`                 | terme terminal `0.5 · log`    | **plus rémunéré**                              |
+| Part de tuiles (terminal)   | `w_end_tiles · tileShare`     | **supprimé**                                   |
+| Gain de troupes par seconde | absent                        | **potentiel `log1p(troopIncome)`**             |
+| Or                          | potentiel `log1p(goldEarned)` | conservé                                       |
+| Armée                       | malus sous 0,18, plafonné à 3 | **bande symétrique** 0,25 ± 0,05 (§7.2 quater) |
 
 Le signal militaire devient donc : _produire plus de troupes par seconde_.
 
@@ -87,14 +87,14 @@ Trois conséquences :
 3. Le modèle reste libre : le masque retire les buckets trop gros, il n'impose
    pas de choix.
 
-Le même nombre `0.18` est utilisé à trois endroits, et un test vérifie qu'ils ne
+Trois valeurs voisines doivent rester ordonnées, et un test vérifie qu'elles ne
 divergent pas :
 
-| Endroit                                       | Rôle                                  |
-| --------------------------------------------- | ------------------------------------- |
-| `ARMY_FLOOR_RATIO` (`attackPolicy.ts`)        | dimensionnement des attaques (masque) |
-| `REWARD_V2.lowArmyRatio` (`config/reward.ts`) | malus dense sous le plancher          |
-| `TRAINING_WHEELS.minTroopRatioOfCap` = 0.20   | roulette d'entraînement (retirable)   |
+| Endroit                                     | Rôle                                  |
+| ------------------------------------------- | ------------------------------------- |
+| `ARMY_FLOOR_RATIO` (`attackPolicy.ts`)      | dimensionnement des attaques (masque) |
+| `REWARD_V2.armyTarget - armyBand` = 0.20    | bord bas de la bande d'armée          |
+| `TRAINING_WHEELS.minTroopRatioOfCap` = 0.20 | roulette d'entraînement (retirable)   |
 
 ---
 
@@ -263,7 +263,7 @@ sans prendre en compte les dépenses ».
 | Or, par décision | potentiel `log1p(goldEarned)` | **supprimé**                                    |
 | Or, en terminal  | rien                          | `w_end_gold · log1p(goldEarned_T) / log1p(1e6)` |
 | Troupes/s        | potentiel dense               | inchangé                                        |
-| Armée basse      | malus dense plafonné          | inchangé                                        |
+| Armée            | malus dense sous 0,40         | **bande** 0,25 ± 0,05, des deux côtés           |
 
 `goldEarned` est le compteur **cumulé** du moteur : incrémenté dans `addGold()`,
 jamais décrémenté par `removeGold()`. Le terme mesure donc ce que le bot a
@@ -287,13 +287,46 @@ l'économie sans progresser.
 Deux références avaient été calibrées pour des épisodes de 3 min, pendant
 lesquels le bot ne pouvait pas gagner :
 
-| Constat mesuré (15 itérations × 4 épisodes × 6 000 ticks)                | Correctif                        |
-| ----------------------------------------------------------------------- | -------------------------------- |
-| `goldEarned` 1,4–1,6 M et `goldRef` 1 M → **tous** les épisodes saturaient le terme à 1,0 : or plat, gradient nul | `goldRef` 1 M → **5 M**          |
-| `wWin = 0` : une victoire payait exactement ce qu'une défaite de même durée gagne en or | `wWin` 0 → **2**                 |
+| Constat mesuré (15 itérations × 4 épisodes × 6 000 ticks)                                                         | Correctif               |
+| ----------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `goldEarned` 1,4–1,6 M et `goldRef` 1 M → **tous** les épisodes saturaient le terme à 1,0 : or plat, gradient nul | `goldRef` 1 M → **5 M** |
+| `wWin = 0` : une victoire payait exactement ce qu'une défaite de même durée gagne en or                           | `wWin` 0 → **2**        |
 
 `wWin > wEndGold` est une contrainte dure : une victoire doit toujours battre
 une défaite, quelle que soit la durée. Elle est vérifiée par un test.
+
+### 7.2 quater Bande d'armée (2026-11-13)
+
+Le plancher unilatéral à 0,40 était inutile comme cible de shaping : les
+troupes par seconde du moteur,
+
+```text
+troopIncreaseRate = (10 + troops^0,73 / 4) · (1 − troops / maxTroops)
+```
+
+atteignent leur maximum à un ratio de **0,422, quel que soit le plafond**
+(vérifié numériquement de 2 M à 12 M). Le potentiel de revenu paie donc déjà
+la politique pour garder 42 % du plafond : mesuré sur 30 itérations, l'armée
+s'est installée à 0,40–0,47, `wait` est monté à 75 % et ~20 % de la carte est
+resté neutre. Un plancher ne peut de toute façon que mordre vers le bas : il
+n'avait rien à dire sur le stockage.
+
+| Paramètre        | Valeur | Rôle                                            |
+| ---------------- | ------ | ----------------------------------------------- |
+| `armyTarget`     | 0,25   | centre de la bande                              |
+| `armyBand`       | 0,05   | demi-largeur : zone libre `[0,20 ; 0,30]`       |
+| `cArmyBand`      | 0,006  | malus par décision à une bande d'écart          |
+| `maxArmyDeficit` | 3      | l'écart cesse de croître à 3 bandes (0,10/0,40) |
+| `armyPenaltyCap` | 6      | cumul maximal par épisode                       |
+
+Deux contraintes vérifiées par des tests :
+
+1. le bord bas 0,20 est **au-dessus** de `ARMY_FLOOR_RATIO` (0,18) et **égal**
+   au plancher de la roulette d'entraînement : le masque ne peut pas clouer
+   l'armée à l'intérieur de la zone libre (c'est ce qui avait rendu le malus
+   inerte) ;
+2. le bord haut 0,30 est **sous** l'optimum de revenu (0,422) : la bande apporte
+   une information que le potentiel ne contient pas déjà.
 
 ### 7.2 ter Résultat mesuré du correctif (A/B, même protocole)
 

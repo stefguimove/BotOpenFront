@@ -56,6 +56,8 @@ describe("attack sizing", () => {
     expect(TRAINING_WHEELS.minTroopRatioOfCap).toBeGreaterThanOrEqual(
       ARMY_FLOOR_RATIO,
     );
-    expect(REWARD_V2.lowArmyRatio).toBeGreaterThan(ARMY_FLOOR_RATIO);
+    expect(REWARD_V2.armyTarget - REWARD_V2.armyBand).toBeGreaterThan(
+      ARMY_FLOOR_RATIO,
+    );
   });
 });

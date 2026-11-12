@@ -1,6 +1,6 @@
 /**
- * Reward v3: potential-based troop income, a bounded low-army penalty, and a
- * terminal term on the *total* gold earned.
+ * Reward v4: potential-based troop income, an army *band* penalty, and a
+ * terminal term on the *total* gold earned plus a win bonus.
  *
  * Changed on 2026-11-12 (BOT_REWARD_V2.md):
  *  - tiles are no longer rewarded, neither per decision nor at the end;
@@ -28,6 +28,15 @@
  * with no gradient), and a win paid the same as a loss. Measured on 15
  * iterations x 4 episodes: the eval reached 10/10 wins while the reward never
  * mentioned the win.
+ *
+ * Changed on 2026-11-13 (band): the one-sided low-army floor became a band
+ * around `armyTarget`. The floor was pointless as a *shaping* target: troops
+ * per second peak at a ratio of ~0.42 whatever the cap, so income alone already
+ * pays the policy to hold 42 % of the cap — measured army sat at 0.40-0.47 while
+ * ~20 % of the map stayed neutral and `wait` grew to 75 %. On top of that, a
+ * floor can only ever fire downwards, so it never said anything about hoarding.
+ * The band pays on both sides, and its upper edge (0.30) is below the income
+ * optimum so it adds information the potential does not already carry.
  */
 export interface RewardParams {
   /**
@@ -51,15 +60,35 @@ export interface RewardParams {
    */
   wWin: number;
   /**
-   * Per-decision penalty at a full deficit, i.e. an empty army while the floor
-   * is `lowArmyRatio` of the cap. A dense floor on top of the income potential:
-   * it bites immediately, before income has had time to collapse.
+   * Per-decision penalty when the army sits a full band outside
+   * `armyTarget ± armyBand`, i.e. at `armyTarget ± 2 * armyBand`. A dense
+   * signal on top of the income potential: it bites immediately, before income
+   * has had time to collapse.
    */
-  cLowArmy: number;
-  /** Army floor, as a fraction of maxTroops. Below it, the penalty starts. */
-  lowArmyRatio: number;
-  /** Maximum total low-army penalty per episode. */
-  lowArmyCap: number;
+  cArmyBand: number;
+  /**
+   * Army the shaping term steers to, as a fraction of maxTroops.
+   *
+   * Deliberately below the income optimum of ~0.42 (see `armyBand`): holding
+   * 42 % maximises troop income, so the potential alone parks the policy
+   * there and the surplus never becomes territory.
+   */
+  armyTarget: number;
+  /**
+   * Half-width of the free zone around `armyTarget`. Inside
+   * `[armyTarget - armyBand, armyTarget + armyBand]` the term pays nothing.
+   *
+   * `armyTarget + armyBand` must stay strictly below the income optimum
+   * (~0.42), otherwise the term is redundant with the potential, and
+   * `armyTarget - armyBand` must stay above `ARMY_FLOOR_RATIO` (0.18),
+   * otherwise the attack mask pins the army inside the free zone and the term
+   * can never fire — which is what made an earlier version inert.
+   */
+  armyBand: number;
+  /** Distance, in bands, at which the penalty stops growing. */
+  maxArmyDeficit: number;
+  /** Maximum total army penalty per episode. */
+  armyPenaltyCap: number;
   /** Per-decision clip. */
   clip: number;
   /**
@@ -83,20 +112,25 @@ export const REWARD_V2: RewardParams = {
   // loss of the same length, and small enough that gold and troop income still
   // separate two wins from each other.
   wWin: 2,
-  // A full deficit costs 0.02 per decision, capped at 3 per episode (reached in
-  // ~150 decisions). Immediate and bounded, so it cannot dominate the income
-  // potential but is felt at once.
-  cLowArmy: 0.02,
-  // Must equal ARMY_FLOOR_RATIO: the mask sizes attacks so they never cross it.
-  // Deliberately ABOVE the mask floor (18 %): the mask is a hard safety limit,
-  // this is the shaping target. They used to be the same number, which made
-  // the penalty inert — the mask pins the army at 18 %, so the penalty could
-  // never fire, troop income stayed constant, and the dense reward was
-  // therefore exactly zero on almost every decision. Measured consequence: a
-  // fresh policy and a 6-generation one both sat at army=0.20 and both
-  // reached tileShare 0.12, i.e. training did nothing.
-  lowArmyRatio: 0.4,
-  lowArmyCap: 3,
+  // 0.006 per decision at one band of deviation. The typical troop-income
+  // reward per decision is ~0.005, so one band out is about as loud as income
+  // and three bands out (0.018) is three times louder: enough to stop the
+  // policy hoarding, small enough that income still leads.
+  cArmyBand: 0.006,
+  // 0.25 with a +/-0.05 band leaves the army free in [0.20, 0.30]: 70-80 % of
+  // the cap is available for conquest, and 0.20 is the attack floor the
+  // training wheels already use. The engine's troops per second,
+  // `(10 + troops^0.73 / 4) * (1 - troops / maxTroops)`, peaks at a ratio of
+  // 0.422 for every cap, so the old 0.40 floor sat *at* the optimum: income
+  // rewarded hoarding and the policy drifted to 0.40-0.47 while 20 % of the map
+  // stayed neutral (measured over 30 iterations of the long-horizon run).
+  armyTarget: 0.25,
+  armyBand: 0.05,
+  maxArmyDeficit: 3,
+  // Reached in ~330 decisions at the maximum deviation, so a policy that never
+  // returns to the band loses at most 6 per episode: three times the win bonus,
+  // which is the point, but still bounded.
+  armyPenaltyCap: 6,
   clip: 1,
   gamma: 1,
 };
@@ -110,12 +144,12 @@ export const REWARD_V1 = REWARD_V2;
 export interface RewardState {
   goldEarned: number;
   potentialTroopIncome: number;
-  lowArmyPenalty: number;
+  armyPenalty: number;
   total: number;
-  components: { troopIncome: number; lowArmy: number };
+  components: { troopIncome: number; army: number };
 }
 
-/** Standing army and its cap, used by the low-army penalty. */
+/** Standing army and its cap, used by the army-band term. */
 export interface ArmyState {
   troops: number;
   maxTroops: number;
@@ -136,9 +170,9 @@ export function createRewardState(
   return {
     goldEarned,
     potentialTroopIncome: potentialOf(troopIncome, REWARD_V2.wTroopIncome),
-    lowArmyPenalty: 0,
+    armyPenalty: 0,
     total: 0,
-    components: { troopIncome: 0, lowArmy: 0 },
+    components: { troopIncome: 0, army: 0 },
   };
 }
 
@@ -159,27 +193,34 @@ export interface RewardStep {
   /** Reward for this decision, already clipped and summed. */
   reward: number;
   troopIncome: number;
-  lowArmy: number;
+  army: number;
 }
 
 /**
- * Penalty proportional to how far the army sits below the floor. Zero when the
- * army is healthy or unknown, and total-bounded so it can never dominate.
+ * Penalty for sitting outside the army band, in either direction: too low is a
+ * defenceless army, too high is troops that should have become territory. Zero
+ * inside `[target - band, target + band]`, growing linearly to
+ * `maxArmyDeficit` bands out, and total-bounded so it cannot swamp the incomes.
  */
-function lowArmyPenalty(
+function armyBandPenalty(
   state: RewardState,
   params: RewardParams,
   army: ArmyState | undefined,
 ): number {
-  if (army === undefined || params.cLowArmy <= 0) return 0;
+  if (army === undefined || params.cArmyBand <= 0) return 0;
   const maxTroops = safe(army.maxTroops);
-  const ratio = maxTroops > 0 ? safe(army.troops) / maxTroops : 1;
-  if (!(ratio < params.lowArmyRatio)) return 0;
-  const room = params.lowArmyCap - state.lowArmyPenalty;
+  if (maxTroops <= 0) return 0;
+  const ratio = safe(army.troops) / maxTroops;
+  const distance = Math.abs(ratio - params.armyTarget) - params.armyBand;
+  if (!(distance > 0)) return 0;
+  const room = params.armyPenaltyCap - state.armyPenalty;
   if (room <= 0) return 0;
-  const deficit = (params.lowArmyRatio - ratio) / params.lowArmyRatio;
-  const penalty = Math.min(room, params.cLowArmy * deficit);
-  state.lowArmyPenalty += penalty;
+  const deficit = Math.min(
+    params.maxArmyDeficit,
+    distance / Math.max(params.armyBand, 1e-9),
+  );
+  const penalty = Math.min(room, params.cArmyBand * deficit);
+  state.armyPenalty += penalty;
   return -penalty;
 }
 
@@ -196,18 +237,18 @@ export function stepReward(
   const nextTroop = potentialOf(sample.troopIncome, params.wTroopIncome);
   const troopReward = params.gamma * nextTroop - state.potentialTroopIncome;
 
-  const lowArmyReward = lowArmyPenalty(state, params, army);
+  const armyReward = armyBandPenalty(state, params, army);
 
-  const raw = troopReward + lowArmyReward;
+  const raw = troopReward + armyReward;
   const reward = clip(raw, params.clip);
 
   state.potentialTroopIncome = nextTroop;
   state.goldEarned = safe(sample.goldEarned);
   state.total += reward;
   state.components.troopIncome += troopReward;
-  state.components.lowArmy += lowArmyReward;
+  state.components.army += armyReward;
 
-  return { reward, troopIncome: troopReward, lowArmy: lowArmyReward };
+  return { reward, troopIncome: troopReward, army: armyReward };
 }
 
 /**

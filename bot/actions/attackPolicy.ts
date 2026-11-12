@@ -1,15 +1,16 @@
 import { RATIO_BUCKETS } from "../input/types";
 
 /**
- * The army floor, as a fraction of `maxTroops`. It is the same number in three
- * places on purpose, so the reward, the action space and the training wheels
- * cannot disagree:
+ * The army floor, as a fraction of `maxTroops`. It is the same number in two
+ * places on purpose, so the action space and the training wheels cannot
+ * disagree:
  *
  *  1. `ratioMask` never offers an attack large enough to cross it;
- *  2. `REWARD_V2.lowArmyRatio` pays a dense penalty below it;
- *  3. `TRAINING_WHEELS.minTroopRatioOfCap` refuses attacks below it.
+ *  2. `TRAINING_WHEELS.minTroopRatioOfCap` refuses attacks below it.
  *
- * A test asserts the three values are equal.
+ * The reward's army band sits above it (`REWARD_V2.armyTarget - armyBand`), so
+ * the mask cannot pin the army where the band is silent. A test asserts the
+ * ordering.
  */
 export const ARMY_FLOOR_RATIO = 0.18;
 
