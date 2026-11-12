@@ -64,7 +64,10 @@ export const REWARD_V2: RewardParams = {
   gamma: 1,
 };
 
-/** Kept as an alias so callers that pin the profile keep working. */
+/**
+ * @deprecated name kept so existing imports (CLIs) keep working; this is the
+ * v2 profile, not the old tile-based one. Prefer `REWARD_V2`.
+ */
 export const REWARD_V1 = REWARD_V2;
 
 export interface RewardState {
