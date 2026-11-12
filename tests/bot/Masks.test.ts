@@ -69,11 +69,21 @@ describe("buildMask", () => {
 });
 
 describe("ratioMask", () => {
-  test("exposes one entry per bucket", () => {
+  test("exposes one entry per bucket, sized to the army floor", () => {
     const obs = observation();
+    // 12k troops on a 100k cap is below the floor: nibbles only.
     obs.self.troops = 12_000;
+    obs.self.maxTroops = 100_000;
     expect(ratioMask(obs)).toHaveLength(RATIO_BUCKETS.length);
-    expect(ratioMask(obs).every(Boolean)).toBe(true);
+    expect(ratioMask(obs).some(Boolean)).toBe(true);
+    expect(ratioMask(obs).some((allowed) => !allowed)).toBe(true);
+  });
+
+  test("offers every bucket to an army at its cap", () => {
+    const obs = observation();
+    obs.self.troops = 100_000;
+    obs.self.maxTroops = 100_000;
+    expect(ratioMask(obs)).toEqual(RATIO_BUCKETS.map((r) => r <= 0.75));
   });
 
   test("blocks everything without troops", () => {

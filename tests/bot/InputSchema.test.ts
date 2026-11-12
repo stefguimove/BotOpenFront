@@ -201,7 +201,7 @@ describe("golden vectors", () => {
         tiles: 10_000,
         totalLandTiles: 100_000,
         goldRate: 10_000,
-        tileRate: 500,
+        troopIncome: 5_000,
         incomingTroops: 5_000,
         outgoingAttackCount: 2,
       }),
@@ -214,7 +214,7 @@ describe("golden vectors", () => {
       0.1, // tile share
       0.8 - 0.1, // winGap
       0.1, // goldRate / 100000
-      0.1, // tileRate / 5000
+      Math.log1p(5_000) / Math.log1p(50_000), // troop income per second
       0.1, // threat = 5000 / 50000
       0.2, // 2 / 10
     ];

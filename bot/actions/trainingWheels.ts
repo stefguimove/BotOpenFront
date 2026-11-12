@@ -16,7 +16,11 @@ export interface TrainingWheels {
   minTroopRatioOfCap: number;
 }
 
-export const TRAINING_WHEELS: TrainingWheels = { minTroopRatioOfCap: 0.2 };
+export const TRAINING_WHEELS: TrainingWheels = {
+  // Slightly above ARMY_FLOOR_RATIO: during training the bot should learn to
+  // hold a buffer, not to live exactly on the sizing limit.
+  minTroopRatioOfCap: 0.2,
+};
 
 /** Explicitly no training wheels. */
 export const TRAINING_WHEELS_OFF = null;

@@ -1710,6 +1710,14 @@ part de tuiles reste sous 0,01, la cause est toujours le ratio d'attaque
 Les pistes non retenues restent P3 (ratio plafonné à 0,5 hors défense), P4 (pas
 de ré-attaque d'une cible déjà attaquée) et P7 (biais initial vers 0,2).
 
+### 21.8bis Récompense v2 — tuiles et `maxTroops` remplacés par le revenu de troupes
+
+Voir [`BOT_REWARD_V2.md`](BOT_REWARD_V2.md). Le §6.4 de ce document décrit la
+v1 et n'est plus la référence pour les tuiles et `maxTroops` : les deux termes
+sont supprimés, remplacés par un potentiel sur `troopIncreaseRate × 10`, et une
+contrainte de dimensionnement des attaques empêche l'armée de passer sous 18 %
+du plafond.
+
 ### 21.9 Inputs v2 (séparation des entrées par modèle) — **implémenté**
 
 Les entrées v1 sont communes : les 27 dims `self` sont données à chacun des six

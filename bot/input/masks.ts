@@ -1,5 +1,6 @@
+import { attackRatioMask } from "../actions/attackPolicy";
 import { buildGateAllows } from "../actions/buildPolicy";
-import { RATIO_BUCKETS, type Observation } from "./types";
+import type { Observation } from "./types";
 
 /**
  * A legal attack target. `playerID === null` is TerraNullius, which the
@@ -25,9 +26,12 @@ export function attackTargets(obs: Observation): AttackTarget[] {
   return out;
 }
 
-/** Ratio buckets the bot can afford. All of them when it has any troops. */
+/**
+ * Ratio buckets that keep the army at or above the floor (see
+ * `attackPolicy.ts`). This is what makes a full send impossible.
+ */
 export function ratioMask(obs: Observation): boolean[] {
-  return RATIO_BUCKETS.map(() => obs.self.troops > 0);
+  return attackRatioMask(obs.self.troops, obs.self.maxTroops);
 }
 
 /** Build options that are legal and affordable. */

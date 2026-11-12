@@ -73,10 +73,14 @@ describe("checkpoints", () => {
     ).toThrow();
   });
 
-  test("rejects a v1 checkpoint with an explicit message", () => {
-    // Inputs v2 changed every layer shape, so a v1 file cannot be converted.
+  test("rejects an obsolete checkpoint with an explicit message", () => {
+    // v2 changed every layer shape; v3 changed what core slot 7 means. Neither
+    // can be converted, so both must fail loudly instead of loading.
     expect(() => fromCheckpoint({ version: 1, weights: {} })).toThrow(
-      /v1 checkpoint/,
+      /obsolete/,
+    );
+    expect(() => fromCheckpoint({ version: 2, weights: {} })).toThrow(
+      /invalid checkpoint/,
     );
   });
 

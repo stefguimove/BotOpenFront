@@ -132,6 +132,16 @@ export function defaultTrainOptions(
   };
 }
 
+/** Share of one intent type among all intents of an iteration. */
+export function intentShare(
+  counts: Record<string, number>,
+  type: string,
+): number {
+  let total = 0;
+  for (const count of Object.values(counts)) total += count;
+  return total === 0 ? 0 : (counts[type] ?? 0) / total;
+}
+
 export interface IterationReport {
   iteration: number;
   episodes: number;
@@ -139,6 +149,14 @@ export interface IterationReport {
   steps: number;
   meanReward: number;
   meanTileShare: number;
+  /** Mean of `troops / maxTroops` over the episodes: a dumped army shows here. */
+  meanTroopRatio: number;
+  /** Troop income per second at the end of the episodes, the reward's target. */
+  meanTroopIncome: number;
+  /** Intents per type across the iteration, the mix that reveals full-send. */
+  intentCounts: Record<string, number>;
+  /** Share of `attack` intents among all intents, 0-1. */
+  attackShare: number;
   updatedModels: ModelName[];
 }
 
@@ -213,6 +231,9 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
       let rewardSum = 0;
       let shareSum = 0;
       let episodes = 0;
+      let troopRatioSum = 0;
+      let troopIncomeSum = 0;
+      const intentCounts: Record<string, number> = {};
       for (let index = 0; index < outcomes.length; index++) {
         const outcome = outcomes[index];
         if (outcome.error !== undefined) {
@@ -230,6 +251,13 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         steps += outcome.steps.length;
         rewardSum += outcome.steps.reduce((sum, s) => sum + s.reward, 0);
         shareSum += outcome.stats.tileShare;
+        troopRatioSum += outcome.stats.meanTroopRatio ?? 0;
+        troopIncomeSum += outcome.stats.troopIncomePerSecond ?? 0;
+        for (const [type, count] of Object.entries(
+          outcome.stats.intentCounts ?? {},
+        )) {
+          intentCounts[type] = (intentCounts[type] ?? 0) + count;
+        }
         episodes += 1;
       }
 
@@ -242,6 +270,10 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         steps,
         meanReward: steps === 0 ? 0 : rewardSum / steps,
         meanTileShare: episodes === 0 ? 0 : shareSum / episodes,
+        meanTroopRatio: episodes === 0 ? 0 : troopRatioSum / episodes,
+        meanTroopIncome: episodes === 0 ? 0 : troopIncomeSum / episodes,
+        intentCounts,
+        attackShare: intentShare(intentCounts, "attack"),
         updatedModels,
       };
       history.push(report);
@@ -249,6 +281,9 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         `iteration ${iteration}: episodes=${episodes} steps=${steps} ` +
           `reward=${report.meanReward.toFixed(4)} ` +
           `tileShare=${report.meanTileShare.toFixed(5)} ` +
+          `army=${report.meanTroopRatio.toFixed(3)} ` +
+          `troops/s=${report.meanTroopIncome.toFixed(0)} ` +
+          `attack=${(100 * report.attackShare).toFixed(0)}% ` +
           `updated=${updatedModels.join(",") || "none"}`,
       );
 
@@ -269,15 +304,15 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
           replayDir: options.replayDir,
           log: () => {},
         });
-        const mean =
-          evaluation.shares.reduce((a, b) => a + b, 0) /
-          Math.max(1, evaluation.shares.length);
+        const mean = (values: number[]): number =>
+          values.reduce((a, b) => a + b, 0) / Math.max(1, values.length);
         options.log(
-          `iteration ${iteration} eval: tileShare=${mean.toFixed(5)} ` +
-            `reward=${(
-              evaluation.rewards.reduce((a, b) => a + b, 0) /
-              Math.max(1, evaluation.rewards.length)
-            ).toFixed(4)}`,
+          `iteration ${iteration} eval: ` +
+            `tileShare=${mean(evaluation.shares).toFixed(5)} ` +
+            `army=${mean(evaluation.troopRatios).toFixed(3)} ` +
+            `troops/s=${mean(evaluation.troopIncomes).toFixed(0)} ` +
+            `attack=${(100 * mean(evaluation.attackShares)).toFixed(0)}% ` +
+            `reward=${mean(evaluation.rewards).toFixed(4)}`,
         );
       }
     }
@@ -337,9 +372,18 @@ export async function evaluateWeights(
     replayDir: string;
     log: (message: string) => void;
   },
-): Promise<{ shares: number[]; rewards: number[] }> {
+): Promise<{
+  shares: number[];
+  rewards: number[];
+  troopRatios: number[];
+  troopIncomes: number[];
+  attackShares: number[];
+}> {
   const shares: number[] = [];
   const rewards: number[] = [];
+  const troopRatios: number[] = [];
+  const troopIncomes: number[] = [];
+  const attackShares: number[] = [];
   for (let i = 0; i < options.games; i++) {
     const gameID = gameIDFor(options.seed + 1, 90_000 + i);
     const run = await runEpisode({
@@ -353,15 +397,20 @@ export async function evaluateWeights(
       reward: options.reward,
       trainingWheels: options.trainingWheels,
     });
-    shares.push(run.result.stats.tileShare);
+    const stats = run.result.stats;
+    shares.push(stats.tileShare);
     rewards.push(run.steps.reduce((sum, s) => sum + s.reward, 0));
+    troopRatios.push(stats.meanTroopRatio ?? 0);
+    troopIncomes.push(stats.troopIncomePerSecond ?? 0);
+    attackShares.push(intentShare(stats.intentCounts ?? {}, "attack"));
     options.log(
-      `eval ${gameID}: tiles=${run.result.stats.tiles} ` +
-        `share=${run.result.stats.tileShare.toFixed(5)} ` +
-        `maxTroops=${run.result.stats.maxTroops} ` +
-        `peakTroops=${run.result.stats.peakTroops} ` +
-        `troops=${run.result.stats.troops.toFixed(0)} ` +
-        `gold/s=${run.result.stats.goldPerSecond.toFixed(1)}`,
+      `eval ${gameID}: tiles=${stats.tiles} ` +
+        `share=${stats.tileShare.toFixed(5)} ` +
+        `army=${(stats.meanTroopRatio ?? 0).toFixed(3)} ` +
+        `troops/s=${(stats.troopIncomePerSecond ?? 0).toFixed(0)} ` +
+        `attack=${(100 * intentShare(stats.intentCounts ?? {}, "attack")).toFixed(0)}% ` +
+        `troops=${stats.troops.toFixed(0)}/${stats.maxTroops.toFixed(0)} ` +
+        `gold/s=${stats.goldPerSecond.toFixed(1)}`,
     );
     if (options.saveReplay) {
       const record = buildGameRecord({
@@ -383,7 +432,7 @@ export async function evaluateWeights(
       options.log(`replay ${file}`);
     }
   }
-  return { shares, rewards };
+  return { shares, rewards, troopRatios, troopIncomes, attackShares };
 }
 
 export { toCheckpoint };

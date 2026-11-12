@@ -20,6 +20,7 @@ export function selfState(overrides: Partial<SelfState> = {}): SelfState {
     goldEarned: 10_000,
     goldRate: 1_000,
     tileRate: 5,
+    troopIncome: 1_000,
     tiles: 1_000,
     totalLandTiles: 1_048_576,
     winShare: 0.8,

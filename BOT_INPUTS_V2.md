@@ -110,7 +110,7 @@ Invariants (testés) :
 | 4   | `tileShare`  | `tiles / totalLandTiles`                   | objectif commun                      |
 | 5   | `winGap`     | `clamp01(winShare − tileShare)`            | progression vers la victoire         |
 | 6   | `goldRate`   | `clamp01(goldRate / 1e5)`                  | économie commune                     |
-| 7   | `tileRate`   | `clamp01(tileRate / 5000)`                 | dynamique commune                    |
+| 7   | `troopRate`  | `logScale(troopIncome, 50000)`             | revenu de troupes (BOT_REWARD_V2.md) |
 | 8   | `threat`     | `clamp01(incomingTroops / max(1, troops))` | menace commune                       |
 | 9   | `myAttacks`  | `clamp01(outgoingAttacks / 10)`            | engagement courant                   |
 

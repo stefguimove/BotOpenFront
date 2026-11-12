@@ -18,6 +18,12 @@ export interface EpisodeStats {
   gold: number;
   goldEarned: number;
   goldPerSecond: number;
+  /** Troop income per second at the end of the episode. */
+  troopIncomePerSecond: number;
+  /** Mean `troops / maxTroops` over the decisions, to spot a dumped army. */
+  meanTroopRatio: number;
+  /** Intents emitted, by type: the mix that reveals a full-send loop. */
+  intentCounts: Record<string, number>;
   kills: number;
   deaths: number;
 }
@@ -75,6 +81,17 @@ export function playEpisode(
   let decisionCount = 0;
   let intentCount = 0;
   let peakTroops = 0;
+  const intentCounts: Record<string, number> = {};
+  let troopRatioSum = 0;
+  let troopRatioSamples = 0;
+
+  const recordRatio = (player: { troops(): number } | null) => {
+    if (player === null) return;
+    const cap = game.config().maxTroops(player as never);
+    if (!(cap > 0)) return;
+    troopRatioSum += Math.min(1, Math.max(0, player.troops() / cap));
+    troopRatioSamples += 1;
+  };
 
   const playerOf = () => game.playerByClientID(bot.clientID);
 
@@ -100,6 +117,10 @@ export function playEpisode(
       decisionCount += 1;
       options.hooks?.onDecision?.({ game, tick, intents, decisions: sampled });
       intentCount += produced.length;
+      for (const intent of produced) {
+        intentCounts[intent.type] = (intentCounts[intent.type] ?? 0) + 1;
+      }
+      recordRatio(playerOf());
     }
 
     const turn: Turn = { turnNumber: tick, intents };
@@ -138,6 +159,11 @@ export function playEpisode(
       me === null || game.elapsedGameSeconds() <= 0
         ? 0
         : Number(me.goldEarned()) / game.elapsedGameSeconds(),
+    troopIncomePerSecond:
+      me === null ? 0 : game.config().troopIncreaseRate(me) * 10,
+    meanTroopRatio:
+      troopRatioSamples === 0 ? 0 : troopRatioSum / troopRatioSamples,
+    intentCounts,
     kills: me?.outgoingAttacks().length ?? 0,
     deaths: me?.incomingAttacks().length ?? 0,
   };

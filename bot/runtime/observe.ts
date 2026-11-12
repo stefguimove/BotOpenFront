@@ -245,6 +245,9 @@ export function observeGame(
     goldEarned,
     goldRate: memory.goldRate,
     tileRate: memory.tileRate,
+    // Straight from the engine: deterministic, and exactly what the reward
+    // optimises, so the models see the quantity being maximised.
+    troopIncome: game.config().troopIncreaseRate(me) * 10,
     tiles,
     totalLandTiles: game.totalLandTiles(),
     winShare:

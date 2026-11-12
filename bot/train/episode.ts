@@ -1,5 +1,5 @@
 import type { GameConfig } from "@openfront/engine-api/Schemas";
-import type { Game } from "@openfront/engine/game/Game";
+import type { Game, Player } from "@openfront/engine/game/Game";
 import type { TrainingWheels } from "../actions/trainingWheels";
 import {
   createRewardState,
@@ -39,9 +39,18 @@ export interface RunEpisodeOptions {
 /** The slice of the game state the reward reads at each decision. */
 export interface RewardSample {
   goldEarned: number;
-  tiles: number;
+  /** Engine troop increase, converted to troops per second. */
+  troopIncome: number;
   troops: number;
   maxTroops: number;
+}
+
+/** Ticks per second; `troopIncreaseRate()` is per tick. */
+const TICKS_PER_SECOND = 10;
+
+/** Troop income the engine would add this second, given the current state. */
+export function troopIncomePerSecond(g: Game, player: Player): number {
+  return g.config().troopIncreaseRate(player) * TICKS_PER_SECOND;
 }
 
 /**
@@ -67,9 +76,15 @@ export class EpisodeRewards {
     if (!this.seeded) {
       // Seed at the first decision so its own interval is measured by the next
       // observation instead of a free spawn-phase delta.
-      this.state.potential = potentialOf(sample.goldEarned, this.params);
+      this.state.potentialGold = potentialOf(
+        sample.goldEarned,
+        this.params.wGold,
+      );
+      this.state.potentialTroopIncome = potentialOf(
+        sample.troopIncome,
+        this.params.wTroopIncome,
+      );
       this.state.goldEarned = sample.goldEarned;
-      this.state.tiles = sample.tiles;
       this.seeded = true;
     } else {
       this.credit(this.advance(sample).reward);
@@ -92,8 +107,7 @@ export class EpisodeRewards {
     return stepReward(
       this.state,
       this.params,
-      sample.goldEarned,
-      sample.tiles,
+      { goldEarned: sample.goldEarned, troopIncome: sample.troopIncome },
       { troops: sample.troops, maxTroops: sample.maxTroops },
     );
   }
@@ -128,11 +142,14 @@ export async function runEpisode(
   const rewards = new EpisodeRewards(options.reward);
   const sample = (g: Game): RewardSample => {
     const me = g.playerByClientID(game.clientID);
+    if (me === null) {
+      return { goldEarned: 0, troopIncome: 0, troops: 0, maxTroops: 0 };
+    }
     return {
-      goldEarned: me === null ? 0 : Number(me.goldEarned()),
-      tiles: me?.numTilesOwned() ?? 0,
-      troops: me === null ? 0 : Number(me.troops()),
-      maxTroops: me === null ? 0 : g.config().maxTroops(me),
+      goldEarned: Number(me.goldEarned()),
+      troopIncome: troopIncomePerSecond(g, me),
+      troops: Number(me.troops()),
+      maxTroops: g.config().maxTroops(me),
     };
   };
 
@@ -148,12 +165,8 @@ export async function runEpisode(
     },
   });
 
-  const me = game.game.playerByClientID(game.clientID);
   const terminal = terminalReward(
     options.reward,
-    me?.numTilesOwned() ?? 0,
-    game.game.totalLandTiles(),
-    me === null ? 0 : game.game.config().maxTroops(me),
     result.stats.winner === "bot",
   );
   rewards.finish(sample(game.game), terminal.reward);

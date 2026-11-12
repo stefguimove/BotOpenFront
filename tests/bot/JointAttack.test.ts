@@ -58,9 +58,15 @@ describe("joint target x ratio mask", () => {
     expect(mask.some(Boolean)).toBe(false);
   });
 
-  test("every bucket is available when the bot has troops", () => {
-    const obs = observation({ self: selfState({ troops: 1 }) });
-    expect(ratioMask(obs)).toEqual(RATIO_BUCKETS.map(() => true));
+  test("buckets are sized by the army floor, not all-or-nothing", () => {
+    const poor = observation({
+      self: selfState({ troops: 1, maxTroops: 100_000 }),
+    });
+    expect(ratioMask(poor)).toEqual(RATIO_BUCKETS.map((r) => r <= 0.2));
+    const rich = observation({
+      self: selfState({ troops: 100_000, maxTroops: 100_000 }),
+    });
+    expect(ratioMask(rich).filter(Boolean).length).toBeGreaterThan(2);
   });
 
   test("flat index decodes back to the target and the ratio", () => {

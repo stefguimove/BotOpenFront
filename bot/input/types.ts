@@ -24,7 +24,7 @@ export const CORE_INDEX = {
   tileShare: 4,
   winGap: 5,
   goldRate: 6,
-  tileRate: 7,
+  troopRate: 7,
   threat: 8,
   myAttacks: 9,
 } as const;
@@ -57,8 +57,10 @@ export interface SelfState {
   goldEarned: number;
   /** Smoothed revenue, gold per second. */
   goldRate: number;
-  /** Smoothed territory gain, tiles per second. */
+  /** Smoothed territory gain, tiles per second. Diagnostic only. */
   tileRate: number;
+  /** Troop gain per second, straight from the engine's troopIncreaseRate. */
+  troopIncome: number;
   tiles: number;
   totalLandTiles: number;
   /** Tile share needed to win, 0-1. */

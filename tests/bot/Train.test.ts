@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { describe, expect, test } from "vitest";
-import { REWARD_V1 } from "../../bot/config/reward";
+import { potentialOf, REWARD_V1 } from "../../bot/config/reward";
 import { compactConfig } from "../../bot/config/target";
 import { cloneParams, mlpForward } from "../../bot/models/mlp";
 import { maskedSoftmax } from "../../bot/models/policy";
@@ -195,13 +195,16 @@ describe("EpisodeRewards", () => {
     chosen: 0,
     probs: [1],
   });
-  const sample = (tiles: number): RewardSample => ({
+  const sample = (troopIncome: number): RewardSample => ({
     goldEarned: 0,
-    tiles,
+    troopIncome,
     troops: 10_000,
     maxTroops: 50_000,
   });
-  const tiles100 = 100 / REWARD_V1.tileScale;
+  const incomeDelta = (from: number, to: number): number =>
+    potentialOf(to, REWARD_V1.wTroopIncome) -
+    potentialOf(from, REWARD_V1.wTroopIncome);
+  const income100 = incomeDelta(1_000, 1_100);
 
   test("credits an interval to the decision it followed", () => {
     const rewards = new EpisodeRewards(REWARD_V1);
@@ -212,12 +215,15 @@ describe("EpisodeRewards", () => {
     // so its delta belongs to the record at tick 0 — not to the one at 10.
     expect(rewards.steps).toHaveLength(1);
     expect(rewards.steps[0].record.tick).toBe(0);
-    expect(rewards.steps[0].reward).toBeCloseTo(tiles100, 10);
+    expect(rewards.steps[0].reward).toBeCloseTo(income100, 10);
 
     rewards.finish(sample(1_200), 2);
     expect(rewards.steps).toHaveLength(2);
     expect(rewards.steps[1].record.tick).toBe(10);
-    expect(rewards.steps[1].reward).toBeCloseTo(tiles100 + 2, 10);
+    expect(rewards.steps[1].reward).toBeCloseTo(
+      incomeDelta(1_100, 1_200) + 2,
+      10,
+    );
   });
 
   test("keeps the terminal term when the last interval has no decision", () => {
@@ -228,7 +234,7 @@ describe("EpisodeRewards", () => {
     // The unclaimed interval is still dropped, but the terminal is not lost.
     expect(rewards.steps).toHaveLength(1);
     expect(rewards.steps[0].record.tick).toBe(0);
-    expect(rewards.steps[0].reward).toBeCloseTo(tiles100 + 2, 10);
+    expect(rewards.steps[0].reward).toBeCloseTo(income100 + 2, 10);
   });
 });
 

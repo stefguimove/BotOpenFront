@@ -24,7 +24,12 @@ export const MODEL_OUTPUT_DIM: Record<ModelName, number> = {
 
 export type AgentWeights = Record<ModelName, MlpParams>;
 
-export const CHECKPOINT_VERSION = 2;
+/**
+ * 3: core slot 7 became troop income per second instead of tile rate
+ *    (BOT_REWARD_V2.md). Shapes are unchanged, but a v2 checkpoint learned a
+ *    different feature there, so loading it silently would be wrong.
+ */
+export const CHECKPOINT_VERSION = 3;
 
 export function createWeights(seed = 1): AgentWeights {
   const out = {} as AgentWeights;
@@ -84,7 +89,7 @@ export function fromCheckpoint(value: unknown): AgentWeights {
   }
   if (checkpoint.version === 1) {
     throw new Error(
-      "v1 checkpoint: inputs changed (BOT_INPUTS_V2.md), retrain to get a v2 checkpoint",
+      `checkpoint version 1 is obsolete: inputs changed in v2 and again in v3, retrain to get a version ${CHECKPOINT_VERSION} checkpoint`,
     );
   }
   if (checkpoint.version !== CHECKPOINT_VERSION) {

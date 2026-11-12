@@ -7,6 +7,8 @@ export const REF = {
   gold: 50_000_000,
   goldRate: 100_000,
   tileRate: 5_000,
+  /** Troop income at a large standing army, in troops per second. */
+  troopRate: 50_000,
   distance: 2896, // TheBox diagonal, sqrt(2048^2 + 2048^2)
   structures: 100,
   cities: 100,

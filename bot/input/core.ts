@@ -5,6 +5,9 @@ import { CORE_DIM, type SelfState } from "./types";
 /**
  * The ten core features, in `CORE_INDEX` order. Every model reads this vector,
  * so anything admitted here must be useful to at least three of them.
+ *
+ * Slot 7 is troop income per second rather than tile rate: income is what the
+ * reward optimises (BOT_REWARD_V2.md), so every head should see it.
  */
 export function encodeCore(self: SelfState): number[] {
   const troops = Math.max(0, safe(self.troops));
@@ -20,7 +23,7 @@ export function encodeCore(self: SelfState): number[] {
     // Positive = still below the win share; orders progress the same way.
     clamp01(clamp01(self.winShare) - tileShare),
     clamp01(safe(self.goldRate) / REF.goldRate),
-    clamp01(safe(self.tileRate) / REF.tileRate),
+    logScale(safe(self.troopIncome), REF.troopRate),
     // Relative incoming pressure: what is a common threat for every model.
     clamp01(safe(self.incomingTroops) / Math.max(1, troops)),
     clamp01(safe(self.outgoingAttackCount) / 10),
