@@ -31,6 +31,12 @@ configuration visée est plus légère : **1 bot contre 10 tribus et 2 nations e
 Easy**. La carte 2048² reste coûteuse, mais le nombre d'acteurs est faible. On
 commence quand même sur une carte compacte, puis on transfère et on fine-tune.
 
+> **Note (2026-11-13)** : le scénario est passé à **13 tribus + 5 nations**
+> (19 acteurs, toujours Easy) parce qu'avec 13 acteurs le bot atteignait
+> 10/10 victoires en évaluation et le scénario ne discriminait plus rien.
+> Voir `bot/config/target.ts` (`targetConfig`) pour les mesures. Les chiffres
+> « 10 tribus + 2 nations » plus bas décrivent le scénario v1.
+
 **Les parties se jouent directement en local.** Le bot n'est pas un client
 réseau : il crée la partie, contrôle un ou plusieurs joueurs, pousse les tours
 dans le moteur et lit l'état en mémoire. Cela simplifie fortement

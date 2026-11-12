@@ -115,7 +115,7 @@ describe("saved replay", () => {
 
 /**
  * The training scenario, exactly: `compactConfig()` is TheBox 1024², Easy,
- * 10 tribes and 2 nations — the same field the trainer and `bot:play` use.
+ * 13 tribes and 5 nations — the same field the trainer and `bot:play` use.
  * A record is only trustworthy if *this* scenario replays, so no test below
  * switches to a smaller field.
  */
@@ -166,12 +166,12 @@ describe("record fidelity", () => {
   }
 
   test("the field is the training composition", async () => {
-    // Guards the point of these tests: 10 tribes + 2 Easy nations, not a duel.
-    expect(config.bots).toBe(10);
-    expect(config.nations).toBe(2);
+    // Guards the point of these tests: 13 tribes + 5 Easy nations, not a duel.
+    expect(config.bots).toBe(13);
+    expect(config.nations).toBe(5);
     expect(config.difficulty).toBe(Difficulty.Easy);
     const { game } = await playTraining(21);
-    expect(game.game.players().length).toBe(13);
+    expect(game.game.players().length).toBe(19);
   }, 120_000);
 
   test("the record states the outcome the game produced", async () => {

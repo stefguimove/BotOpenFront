@@ -11,7 +11,18 @@ import type { GameConfig, GameStartInfo } from "@openfront/engine-api/Schemas";
 export const BOT_CLIENT_ID = "BOT00001";
 export const BOT_USERNAME = "Bot";
 
-/** Target v1: TheBox, 1 human (the bot), 10 tribes, 2 nations, Easy. */
+/**
+ * Target v2 (2026-11-13): TheBox, 1 human (the bot), 13 tribes, 5 nations,
+ * Easy.
+ *
+ * Was 10 tribes + 2 nations (13 players). Over 6000-tick episodes the bot
+ * reached 10/10 eval wins at 80 % of the map, so the scenario stopped
+ * discriminating: every checkpoint won, and the only remaining signal was the
+ * win clock. Measured on the best checkpoint of that run (3 seeds each):
+ * 2+10 -> 3/3 wins, 4+12 -> 3/3, 5+13 -> 1/3 with tile shares 0.56/0.57/0.80,
+ * 6+14 -> 0/2 at 25 %. 19 players is the largest field where the current
+ * policy still wins sometimes, i.e. where training has headroom.
+ */
 export function targetConfig(overrides: Partial<GameConfig> = {}): GameConfig {
   return {
     gameMap: GameMapType.TheBox,
@@ -21,8 +32,8 @@ export function targetConfig(overrides: Partial<GameConfig> = {}): GameConfig {
     difficulty: Difficulty.Easy,
     donateGold: false,
     donateTroops: false,
-    nations: 2,
-    bots: 10,
+    nations: 5,
+    bots: 13,
     infiniteGold: false,
     infiniteTroops: false,
     instantBuild: false,

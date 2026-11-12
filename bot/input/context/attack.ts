@@ -92,7 +92,8 @@ export function encodeAttackCandidate(
     logScale(slot.maxTroops, REF.troops),
     logScale(slot.gold, REF.gold),
     forceRatio(self.troops, slot.troops),
-    // The ten Easy "tribes" are engine bots (PlayerType.Bot); nations are not.
+    // The thirteen Easy "tribes" are engine bots (PlayerType.Bot); nations are
+    // not.
     slot.playerType === PlayerType.Bot ? 1 : 0,
     slot.allied ? 1 : 0,
     slot.attackingMe ? 1 : 0,

@@ -35,13 +35,13 @@ describe("createBotGame", () => {
       config: compactConfig(),
     });
     expect(game.mapSize).toBe(GameMapSize.Compact);
-    // 1 human + 10 tribes + 2 nations after the spawn tick.
+    // 1 human + 13 tribes + 5 nations after the spawn tick.
     playEpisode(game, {
       maxTicks: 3,
       decisionInterval: 10,
       agent: new ScriptedAgent(game.clientID),
     });
-    expect(game.game.allPlayers()).toHaveLength(13);
+    expect(game.game.allPlayers()).toHaveLength(19);
     const humans = game.game
       .allPlayers()
       .filter((p) => p.type() === PlayerType.Human);
