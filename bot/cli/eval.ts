@@ -23,6 +23,7 @@ import { playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { evaluateWeights, gameIDFor } from "../train/train";
 import { numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
+import { weightsFingerprint } from "./fingerprint";
 import { loadWeights } from "./weights";
 
 async function main(): Promise<void> {
@@ -84,7 +85,7 @@ async function main(): Promise<void> {
     seed,
     fallbackPath: "bot/checkpoints/latest.json",
   });
-  console.log(`weights=${source}`);
+  console.log(`weights=${source} fp=${weightsFingerprint(weights)}`);
 
   const result = await evaluateWeights(weights, {
     games,

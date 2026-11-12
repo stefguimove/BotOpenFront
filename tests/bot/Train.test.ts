@@ -146,6 +146,7 @@ describe("GradientAccumulator", () => {
       gamma: 0.99,
       entropy: 0,
       gradClip: 1e9,
+      epochs: 1,
     };
     const accumulator = new GradientAccumulator();
     accumulator.add(

@@ -27,9 +27,10 @@ import type { EpisodeTask } from "./episodeWorker";
 import { EpisodePool, defaultWorkerCount } from "./pool";
 import {
   computeAdvantages,
-  GradientAccumulator,
+  applyReturns,
   REINFORCE_V1,
   type ReinforceOptions,
+  type ReturnStep,
 } from "./reinforce";
 
 import { runEpisode } from "./episode";
@@ -157,6 +158,8 @@ export interface IterationReport {
   intentCounts: Record<string, number>;
   /** Share of `attack` intents among all intents, 0-1. */
   attackShare: number;
+  /** Largest and mean absolute weight change of this iteration. */
+  weightDelta: { max: number; mean: number };
   updatedModels: ModelName[];
 }
 
@@ -199,7 +202,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
   try {
     for (let i = 1; i <= options.iterations; i++) {
       const iteration = startIteration + i;
-      const accumulator = new GradientAccumulator();
+      const returns: ReturnStep[] = [];
 
       // Build every task up front so the gameIDs (and therefore the games)
       // do not depend on completion order.
@@ -245,9 +248,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
           outcome.steps,
           options.reinforce.gamma,
         );
-        for (const step of advantages) {
-          accumulator.add(step, weights, options.reinforce);
-        }
+        for (const step of advantages) returns.push(step);
         steps += outcome.steps.length;
         rewardSum += outcome.steps.reduce((sum, s) => sum + s.reward, 0);
         shareSum += outcome.stats.tileShare;
@@ -261,7 +262,11 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         episodes += 1;
       }
 
-      const updatedModels = accumulator.apply(weights, options.reinforce);
+      const { models: updatedModels, delta } = applyReturns(
+        returns,
+        weights,
+        options.reinforce,
+      );
       gamesPlayed += episodes;
       const report: IterationReport = {
         iteration,
@@ -274,6 +279,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
         meanTroopIncome: episodes === 0 ? 0 : troopIncomeSum / episodes,
         intentCounts,
         attackShare: intentShare(intentCounts, "attack"),
+        weightDelta: delta,
         updatedModels,
       };
       history.push(report);
@@ -284,6 +290,7 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
           `army=${report.meanTroopRatio.toFixed(3)} ` +
           `troops/s=${report.meanTroopIncome.toFixed(0)} ` +
           `attack=${(100 * report.attackShare).toFixed(0)}% ` +
+          `dW=${delta.mean.toExponential(1)} ` +
           `updated=${updatedModels.join(",") || "none"}`,
       );
 

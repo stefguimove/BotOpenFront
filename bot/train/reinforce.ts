@@ -25,14 +25,85 @@ export interface ReinforceOptions {
   entropy: number;
   /** Gradient clipping per parameter. */
   gradClip: number;
+  /**
+   * Update passes over one iteration's trajectories.
+   *
+   * One pass is one SGD step, and one iteration is one pass, so a 10-iteration
+   * run made 10 parameter updates in total: the weights moved by ~1e-3 and the
+   * greedy policy stayed identical, which looked like "the checkpoint changes
+   * nothing". Re-passing the same rollouts is the cheapest way to get a usable
+   * number of updates without simulating more games (the rerun in
+   * BOT_REWARD_V2.md showed the same effect: flat eval metrics).
+   */
+  epochs: number;
 }
 
 export const REINFORCE_V1: ReinforceOptions = {
-  learningRate: 0.01,
+  // The gradient is averaged over a whole iteration (~1 200 decisions), so the
+  // per-update step is tiny: at 0.01 the weights moved by 2e-5 per iteration
+  // and the greedy policy never changed, which read as "the checkpoint does
+  // nothing". 0.5 is stable here and moves ~1e-3 per iteration.
+  learningRate: 0.5,
   gamma: 0.99,
   entropy: 0.01,
   gradClip: 5,
+  epochs: 4,
 };
+
+/** Largest and mean absolute parameter change of one update batch. */
+export interface WeightDelta {
+  max: number;
+  mean: number;
+}
+
+/**
+ * Runs `epochs` update passes over a batch of returns, re-running the forwards
+ * each time so the gradient follows the weights as they move.
+ */
+export function applyReturns(
+  returns: readonly ReturnStep[],
+  weights: AgentWeights,
+  options: ReinforceOptions,
+): { models: ModelName[]; delta: WeightDelta } {
+  const before = snapshotParams(weights);
+  const models = new Set<ModelName>();
+  for (let epoch = 0; epoch < Math.max(1, options.epochs); epoch++) {
+    const accumulator = new GradientAccumulator();
+    for (const step of returns) accumulator.add(step, weights, options);
+    for (const name of accumulator.apply(weights, options)) models.add(name);
+  }
+  return {
+    models: [...models],
+    delta: difference(snapshotParams(weights), before),
+  };
+}
+
+function snapshotParams(weights: AgentWeights): number[] {
+  const out: number[] = [];
+  for (const name of MODEL_NAMES) {
+    const params = weights[name];
+    for (const layer of params.weights) {
+      for (const row of layer) out.push(...row);
+    }
+    for (const bias of params.biases) out.push(...bias);
+  }
+  return out;
+}
+
+function difference(
+  after: readonly number[],
+  before: readonly number[],
+): WeightDelta {
+  let max = 0;
+  let sum = 0;
+  const n = Math.min(after.length, before.length);
+  for (let i = 0; i < n; i++) {
+    const d = Math.abs(after[i] - before[i]);
+    if (d > max) max = d;
+    sum += d;
+  }
+  return { max, mean: n === 0 ? 0 : sum / n };
+}
 
 /** A decision plus the return-to-go attributed to it. */
 export interface TrajectoryStep {

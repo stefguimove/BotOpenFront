@@ -48,6 +48,7 @@ async function main(): Promise<void> {
       ...REINFORCE_V1,
       learningRate: numArg(args, "learning-rate", REINFORCE_V1.learningRate),
       entropy: numArg(args, "entropy", REINFORCE_V1.entropy),
+      epochs: numArg(args, "epochs", REINFORCE_V1.epochs),
     },
     reward: REWARD_V1,
     trainingWheels: trainingWheelsArg(args, TRAINING_WHEELS),

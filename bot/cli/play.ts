@@ -22,6 +22,7 @@ import { playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { gameIDFor } from "../train/train";
 import { boolArg, numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
+import { weightsFingerprint } from "./fingerprint";
 import { loadWeights } from "./weights";
 
 async function main(): Promise<void> {
@@ -63,7 +64,8 @@ async function main(): Promise<void> {
   const stats = result.stats;
   console.log(
     `game=${gameID} ticks=${stats.ticks} decisions=${stats.decisions} ` +
-      `intents=${stats.intents} weights=${weightsSource}`,
+      `intents=${stats.intents} weights=${weightsSource} ` +
+      `fp=${weightsFingerprint(weights)}`,
   );
   console.log(
     `alive=${stats.alive} winner=${stats.winner} tiles=${stats.tiles} ` +

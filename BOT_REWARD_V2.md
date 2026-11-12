@@ -157,3 +157,71 @@ iteration 4 eval: tileShare=0.15285 army=0.169 troops/s=14249 attack=99% reward=
 `CHECKPOINT_VERSION` passe à **3** : les formes sont identiques à la v2, mais la
 case 7 du vecteur noyau est passée de `tileRate` à `troopIncome`. Un checkpoint
 v1 ou v2 est refusé avec un message explicite ; il faut réentraîner.
+
+---
+
+## 6. « `bot:play` donne toujours le même résultat »
+
+Trois causes distinctes, toutes désormais visibles ou corrigées.
+
+### 6.1 Deux fichiers de checkpoint identiques
+
+Le trainer écrit **`latest.json` et `iteration-000NN.json` avec le même
+contenu**. Comparer ces deux fichiers ne peut donc rien changer. Depuis ce
+commit, `bot:play` et `bot:eval` affichent une empreinte des poids :
+
+```text
+game=YCb72222 ... weights=bot/checkpoints/iteration-00010.json fp=285c93da
+```
+
+Même `fp` ⇒ mêmes paramètres chargés ; `fp` différent ⇒ la politique a
+réellement changé (ou non) d'elle-même.
+
+### 6.2 Un chemin `--weights` introuvable était ignoré
+
+L'ancien code faisait `fs.existsSync(path) ? charger : createWeights(seed)` :
+un chemin mal orthographié ou relatif au mauvais dossier jouait donc la partie
+**initiale** du seed 1, en affichant quand même le chemin demandé. C'est le
+symptôme exact « exactement le même résultat quel que soit le fichier ».
+Désormais `loadWeights` échoue avec le chemin résolu :
+
+```text
+Error: cannot load weights bot/checkpoints/iteration-00010.json:
+  ENOENT: no such file or directory
+```
+
+### 6.3 L'entraînement ne bougeait presque pas les poids
+
+Une itération = **un** pas de descente de gradient, moyenne sur ~1 200
+décisions. Sur 10 itérations, cela faisait 10 pas : `dW ≈ 2·10⁻⁵`, soit un
+argmax identique à chaque décision, donc une partie strictement identique.
+
+Correctifs :
+
+| Correctif                       | Effet mesuré                   |
+| ------------------------------- | ------------------------------ |
+| `epochs` (défaut 4)             | 4 passes par itération         |
+| `learningRate` 0,01 → **0,5**   | `dW` 2·10⁻⁵ → **8·10⁻⁴**       |
+| `dW` affiché à chaque itération | contrôle immédiat              |
+| `--epochs`, `--learning-rate`   | réglables sans toucher au code |
+
+Exemple de log :
+
+```text
+iteration 8: ... attack=94% dW=1.1e-3 updated=attack,build,...
+```
+
+`dW` est la variation absolue moyenne des 3 310 paramètres sur l'itération.
+Sous ~1·10⁻⁴, l'entraînement ne fait rien d'utile.
+
+### 6.4 Ce qui reste structurel
+
+Même avec `dW = 8·10⁻⁴`, deux checkpoints d'un même run peuvent produire une
+partie identique : en `play`/`eval`, **le choix du comportement est une règle**
+(`evalBehaviour`), et le modèle ne choisit qu'à l'intérieur (cible, ratio, type
+de bâtiment). La trajectoire est donc largement déterminée par la règle.
+
+Rendre `play` réellement sensible aux poids demande de rendre le
+méta-contrôleur apprenant (une sixième tête `behaviour` : attaquer, construire,
+améliorer, diplomatie, ne rien faire). C'est un changement d'architecture, pas
+un réglage, et il n'est pas fait ici.
