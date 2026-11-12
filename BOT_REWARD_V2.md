@@ -295,6 +295,24 @@ lesquels le bot ne pouvait pas gagner :
 `wWin > wEndGold` est une contrainte dure : une victoire doit toujours battre
 une défaite, quelle que soit la durée. Elle est vérifiée par un test.
 
+### 7.2 ter Résultat mesuré du correctif (A/B, même protocole)
+
+15 itérations × 4 épisodes × 6 000 ticks, `--eval-games 10`, mêmes graines de
+démarrage, même hôte :
+
+|                                 | v3 (`goldRef` 1 M, `wWin` 0) | v4 (`goldRef` 5 M, `wWin` 2) |
+| ------------------------------- | ---------------------------- | ---------------------------- |
+| Première éval à 10/10 victoires | itération 9                  | **itération 6**              |
+| Victoires finales (sur 10)      | 10                           | 10                           |
+| Horloge de victoire             | 4 272 ticks                  | **3 936 ticks** (−8 %)       |
+| Part de tuiles                  | 0,811                        | **0,817**                    |
+| Ratio d'armée (éval)            | 0,38                         | **0,29**                     |
+| `wait` / `attack` (éval)        | 75 % / 15 %                  | 72 % / 18 %                  |
+
+Le modèle apprend donc plus vite, gagne plus tôt et garde moins de troupes
+immobiles. Reprise depuis l'itération 15 sur 25 itérations supplémentaires :
+10/10 maintenu, meilleure horloge 3 904 ticks (itération 24).
+
 ### 7.3 Conséquence sur le crédit
 
 Un seul terme est désormais payé par décision (le revenu de troupes) : le
