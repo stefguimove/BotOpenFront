@@ -197,8 +197,23 @@ describe("terminalReward", () => {
     expect(a.gold).toBeGreaterThan(0);
   });
 
-  test("keeps an optional win bonus, off for short episodes", () => {
-    expect(REWARD_V2.wWin).toBe(0);
+  test("pays a win more than the whole gold term can reach", () => {
+    // The win bonus used to be 0, which made a won game indistinguishable from
+    // a lost one of the same length. It must dominate the gold term so a win
+    // can never be outscored by a loss.
+    expect(REWARD_V2.wWin).toBeGreaterThan(REWARD_V2.wEndGold);
     expect(terminalReward(REWARD_V2, 0, true).win).toBe(REWARD_V2.wWin);
+    const maxGold = terminalReward(REWARD_V2, REWARD_V2.goldRef * 100, false);
+    expect(terminalReward(REWARD_V2, 0, true).reward).toBeGreaterThan(
+      maxGold.reward,
+    );
+  });
+
+  test("keeps earning distinguishable across a long episode", () => {
+    // 1.4-1.6M earned is the range the bot now reaches over 6000 ticks; a
+    // 1M reference clipped all of it to 1 and froze the gradient.
+    const low = terminalReward(REWARD_V2, 1_400_000, false).gold;
+    const high = terminalReward(REWARD_V2, 1_600_000, false).gold;
+    expect(high).toBeGreaterThan(low);
   });
 });

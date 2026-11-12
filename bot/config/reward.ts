@@ -20,6 +20,14 @@
  * cumulative income counter, which `removeGold()` never decrements, so
  * spending does not reduce it: the term measures what the bot *earned*, not
  * what it kept.
+ *
+ * Changed on 2026-11-13 (long-horizon run): `goldRef` 1M -> 5M and `wWin`
+ * 0 -> 2. Both references were tuned for 3-minute episodes, in which the bot
+ * could not win and earned ~180k gold. Over 6000-tick episodes it earns
+ * 1.4-1.6M, i.e. every game clipped the gold term to exactly 1 (a flat offset
+ * with no gradient), and a win paid the same as a loss. Measured on 15
+ * iterations x 4 episodes: the eval reached 10/10 wins while the reward never
+ * mentioned the win.
  */
 export interface RewardParams {
   /**
@@ -35,7 +43,12 @@ export interface RewardParams {
    * is destroyed by dumping troops and grown by territory and cities.
    */
   wTroopIncome: number;
-  /** Terminal weight on a win (0 for 3-minute episodes). */
+  /**
+   * Terminal weight on a win. Zero made sense for 3-minute episodes, which no
+   * policy could win; on the long horizon the bot does win, and without this
+   * term a won game pays exactly what a lost one of the same length earns in
+   * gold, so the returns cannot tell them apart.
+   */
   wWin: number;
   /**
    * Per-decision penalty at a full deficit, i.e. an empty army while the floor
@@ -57,14 +70,19 @@ export interface RewardParams {
 }
 
 export const REWARD_V2: RewardParams = {
-  // 1M gold earned saturates the term. A 3-minute game at ~1 000 gold/s earns
-  // ~180k, so the term spans roughly 0.15 to 1.
+  // 5M gold earned saturates the term. The 1M reference came from 3-minute
+  // episodes (~180k earned): on the 6000-tick episodes the bot now plays it
+  // earns 1.4-1.6M, so `min(1, ...)` pinned every game at 1 and the term had
+  // no gradient left. 5M keeps the whole observed range inside the curve.
   wEndGold: 1,
-  goldRef: 1_000_000,
+  goldRef: 5_000_000,
   // Troop income spans ~240/s (empty army) to ~30 000/s (500k troops), so
   // log1p is worth ~5.5 to ~10.3: the same order as log1p(goldEarned).
   wTroopIncome: 1,
-  wWin: 0,
+  // Above the total reach of the gold term (<= 1) so a win always outscores a
+  // loss of the same length, and small enough that gold and troop income still
+  // separate two wins from each other.
+  wWin: 2,
   // A full deficit costs 0.02 per decision, capped at 3 per episode (reached in
   // ~150 decisions). Immediate and bounded, so it cannot dominate the income
   // potential but is felt at once.

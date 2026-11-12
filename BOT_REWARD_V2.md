@@ -274,12 +274,26 @@ jamais décrémenté par `removeGold()`. Le terme mesure donc ce que le bot a
 | Paramètre  | Valeur    | Rôle                         |
 | ---------- | --------- | ---------------------------- |
 | `wEndGold` | 1,0       | poids du terme or terminal   |
-| `goldRef`  | 1 000 000 | or gagné qui sature le terme |
+| `goldRef`  | 5 000 000 | or gagné qui sature le terme |
+| `wWin`     | 2,0       | bonus terminal de victoire   |
 
 Une partie de 3 min à ~1 000 or/s gagne ~180 000 → terme ≈ 0,15 ; 1 M → 1,0.
 Plage comparable au terme de troupes (0 → ~10), donc l'or reste un signal
 secondaire mais réel, et il ne peut plus être « farmé » en faisant tourner
 l'économie sans progresser.
+
+### 7.2 bis Correctifs du run long (2026-11-13)
+
+Deux références avaient été calibrées pour des épisodes de 3 min, pendant
+lesquels le bot ne pouvait pas gagner :
+
+| Constat mesuré (15 itérations × 4 épisodes × 6 000 ticks)                | Correctif                        |
+| ----------------------------------------------------------------------- | -------------------------------- |
+| `goldEarned` 1,4–1,6 M et `goldRef` 1 M → **tous** les épisodes saturaient le terme à 1,0 : or plat, gradient nul | `goldRef` 1 M → **5 M**          |
+| `wWin = 0` : une victoire payait exactement ce qu'une défaite de même durée gagne en or | `wWin` 0 → **2**                 |
+
+`wWin > wEndGold` est une contrainte dure : une victoire doit toujours battre
+une défaite, quelle que soit la durée. Elle est vérifiée par un test.
 
 ### 7.3 Conséquence sur le crédit
 
