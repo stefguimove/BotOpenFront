@@ -48,7 +48,13 @@ http
       return;
     }
     console.log(`200 ${req.url}`);
-    res.writeHead(200, { "content-type": "application/json" });
+    // `bot:play --save-replay` rewrites `<gameID>.json` in place, and the
+    // gameID only depends on the seed: without `no-store` the browser keeps
+    // showing the replay it fetched first, whatever the new weights played.
+    res.writeHead(200, {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+    });
     res.end(fs.readFileSync(file));
   })
   .listen(port, host, () =>

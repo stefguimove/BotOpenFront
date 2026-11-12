@@ -1,4 +1,3 @@
-import fs from "fs";
 /**
  * Play one local game with the bot, optionally saving a replay.
  *
@@ -17,13 +16,13 @@ import {
   compactConfig,
   targetConfig,
 } from "../config/target";
-import { createWeights, fromCheckpoint } from "../models/weights";
 import { BotAgent } from "../runtime/agent";
 import { createBotGame } from "../runtime/gameEnv";
 import { playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { gameIDFor } from "../train/train";
 import { boolArg, numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
+import { loadWeights } from "./weights";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -37,12 +36,10 @@ async function main(): Promise<void> {
   // Play measures the unaided policy: no wheels unless asked for.
   const trainingWheels = trainingWheelsArg(args, null);
   const gameID = strArg(args, "game-id", gameIDFor(seed, 1));
-  const weightsPath = strArg(args, "weights", "");
-
-  const weights =
-    weightsPath !== "" && fs.existsSync(weightsPath)
-      ? fromCheckpoint(JSON.parse(fs.readFileSync(weightsPath, "utf8")))
-      : createWeights(seed);
+  const { weights, source: weightsSource } = loadWeights({
+    path: strArg(args, "weights", ""),
+    seed,
+  });
 
   const game = await createBotGame({ gameID, config });
   const agent = new BotAgent({
@@ -66,7 +63,7 @@ async function main(): Promise<void> {
   const stats = result.stats;
   console.log(
     `game=${gameID} ticks=${stats.ticks} decisions=${stats.decisions} ` +
-      `intents=${stats.intents}`,
+      `intents=${stats.intents} weights=${weightsSource}`,
   );
   console.log(
     `alive=${stats.alive} winner=${stats.winner} tiles=${stats.tiles} ` +

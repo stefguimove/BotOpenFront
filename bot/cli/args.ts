@@ -1,6 +1,12 @@
 import type { TrainingWheels } from "../actions/trainingWheels";
 
-/** Minimal `--key value` / `--flag` parser; no dependency. */
+/**
+ * Minimal `--key value`, `--key=value` and `--flag` parser; no dependency.
+ *
+ * The `=` form matters: without it `--weights=bot/checkpoints/latest.json` was
+ * stored under the key `weights=bot/checkpoints/latest.json`, so every reader
+ * saw no `--weights` at all and silently fell back to its default.
+ */
 export interface Args {
   [key: string]: string | boolean;
 }
@@ -10,6 +16,11 @@ export function parseArgs(argv: readonly string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i];
     if (!token.startsWith("--")) continue;
+    const equals = token.indexOf("=");
+    if (equals !== -1) {
+      out[token.slice(2, equals)] = token.slice(equals + 1);
+      continue;
+    }
     const key = token.slice(2);
     const next = argv[i + 1];
     if (next === undefined || next.startsWith("--")) {

@@ -1,4 +1,3 @@
-import fs from "fs";
 import { REWARD_V1 } from "../config/reward";
 /**
  * Evaluate a checkpoint, or a baseline, on the target config.
@@ -19,12 +18,12 @@ import {
   targetConfig,
 } from "../config/target";
 import { RandomAgent, ScriptedAgent } from "../eval/baselines";
-import { createWeights, fromCheckpoint } from "../models/weights";
 import { createBotGame } from "../runtime/gameEnv";
 import { playEpisode } from "../runtime/loop";
 import { buildGameRecord, writeGameRecord } from "../runtime/record";
 import { evaluateWeights, gameIDFor } from "../train/train";
 import { numArg, parseArgs, strArg, trainingWheelsArg } from "./args";
+import { loadWeights } from "./weights";
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -80,10 +79,12 @@ async function main(): Promise<void> {
     return;
   }
 
-  const weightsPath = strArg(args, "weights", "bot/checkpoints/latest.json");
-  const weights = fs.existsSync(weightsPath)
-    ? fromCheckpoint(JSON.parse(fs.readFileSync(weightsPath, "utf8")))
-    : createWeights(seed);
+  const { weights, source } = loadWeights({
+    path: strArg(args, "weights", ""),
+    seed,
+    fallbackPath: "bot/checkpoints/latest.json",
+  });
+  console.log(`weights=${source}`);
 
   const result = await evaluateWeights(weights, {
     games,
