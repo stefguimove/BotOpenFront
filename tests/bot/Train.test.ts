@@ -460,6 +460,31 @@ describe("eval ranking", () => {
     expect(isBetterEval(summary(), summary())).toBe(false);
   });
 
+  test("a margin stops noise from counting as progress", () => {
+    // 0.145 vs 0.149 on 10 games is ~0.5 SE: not an improvement.
+    const a = summary({
+      wins: 0,
+      winTicks: null,
+      survivalTicks: 1_800,
+      tileShare: 0.149,
+    });
+    const b = summary({
+      wins: 0,
+      winTicks: null,
+      survivalTicks: 1_800,
+      tileShare: 0.145,
+    });
+    expect(isBetterEval(a, b)).toBe(true); // strict by default
+    expect(isBetterEval(a, b, 0, 0.01)).toBe(false); // with a margin
+    const real = summary({
+      wins: 0,
+      winTicks: null,
+      survivalTicks: 1_800,
+      tileShare: 0.165,
+    });
+    expect(isBetterEval(real, b, 0, 0.01)).toBe(true);
+  });
+
   test("a tolerance lets a 1-game edge count as noise", () => {
     const six = summary({ wins: 6 });
     const seven = summary({ wins: 7 });

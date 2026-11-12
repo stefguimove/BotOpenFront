@@ -230,6 +230,13 @@ export interface IterationReport {
 }
 
 /**
+ * Tile-share difference that counts as progress. With 10 games the standard
+ * error is ~0.006, so 0.01 is ~1.6 SE: enough to reject noise, small enough to
+ * see a real trend.
+ */
+export const EVAL_TILE_MARGIN = 0.01;
+
+/**
  * What one evaluation measured, aggregated over its games.
  *
  * The comparison order is the point: **wins dominate**, and the timing
@@ -268,11 +275,16 @@ export interface EvalSummary {
  * `winsTolerance` exists because evaluations use *different random games*: an
  * apparent 1-game edge over 10 is inside the noise of the field. It is 0 by
  * default so the rule stays literally "7/10 beats 6/10".
+ *
+ * `margin` is the same idea for the tie-breakers: with 10 games the standard
+ * error on tile share is ~0.006, so without a margin the "best" model is simply
+ * the luckiest evaluation, and early stopping treats noise as progress.
  */
 export function isBetterEval(
   a: EvalSummary,
   b: EvalSummary | null,
   winsTolerance = 0,
+  margin = 0,
 ): boolean {
   if (b === null) return true;
   if (a.wins !== b.wins) {
@@ -281,21 +293,22 @@ export function isBetterEval(
       : a.wins > b.wins;
   }
   // Same wins: the faster winner is better.
+  const tickMargin = margin * 100; // 1 % of territory ~= 100 ticks of clock
   if (a.winTicks !== null && b.winTicks !== null) {
-    if (a.winTicks !== b.winTicks) return a.winTicks < b.winTicks;
+    if (a.winTicks < b.winTicks - tickMargin) return true;
+    if (a.winTicks > b.winTicks + tickMargin) return false;
   } else if (a.winTicks !== null) {
     return false; // b already won, and `a` has no win clock: same wins, so b.
   } else if (b.winTicks !== null) {
     return true;
   }
   // No win to time: the policy that survives longer is better.
-  if (a.survivalTicks !== b.survivalTicks) {
-    return a.survivalTicks > b.survivalTicks;
-  }
+  if (a.survivalTicks > b.survivalTicks + tickMargin) return true;
+  if (a.survivalTicks < b.survivalTicks - tickMargin) return false;
   // Last resort: territory. Without it, two policies that both survive the
   // whole episode and never win would tie forever, so "no improvement" would
   // fire while the bot was visibly growing.
-  return a.tileShare > b.tileShare;
+  return a.tileShare > b.tileShare + margin;
 }
 
 /** One-line, self-sufficient eval report: outcome, speed, behaviour, economy. */
@@ -495,7 +508,14 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
           log: () => {},
         });
         const summary = evaluation.summary;
-        const improved = isBetterEval(summary, bestSummary);
+        // A margin on the tie-breakers only: wins stay strictly compared, as
+        // asked, but "0.145 vs 0.149 tuiles" must not count as progress.
+        const improved = isBetterEval(
+          summary,
+          bestSummary,
+          0,
+          EVAL_TILE_MARGIN,
+        );
         if (improved) {
           bestSummary = summary;
           bestWeights = cloneWeights(weights);
