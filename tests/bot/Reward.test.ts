@@ -9,10 +9,10 @@ import {
 } from "../../bot/config/reward";
 
 /**
- * A healthy army inside the band: 25 % of the cap, so the army term is silent
+ * A healthy army inside the band: 35 % of the cap, so the army term is silent
  * unless a test asks for it.
  */
-const ARMY = { troops: 200_000, maxTroops: 800_000 };
+const ARMY = { troops: 280_000, maxTroops: 800_000 };
 
 function step(
   state: ReturnType<typeof createRewardState>,
@@ -79,15 +79,16 @@ describe("stepReward", () => {
       small,
       REWARD_V2,
       { goldEarned: 0, troopIncome: 3_000 },
-      // Both armies sit above the 40 % shaping floor, so the low-army term is
-      // silent and only the income terms can differ — and they do not.
-      { troops: 400_000, maxTroops: 600_000 },
+      // Both armies sit inside the army band (0.40 and 0.35 of the cap), so
+      // the army term is silent and only the income terms can differ — and they
+      // do not.
+      { troops: 240_000, maxTroops: 600_000 },
     );
     const b = stepReward(
       big,
       REWARD_V2,
       { goldEarned: 0, troopIncome: 3_000 },
-      { troops: 400_000, maxTroops: 800_000 },
+      { troops: 280_000, maxTroops: 800_000 },
     );
     expect(a.reward).toBeCloseTo(b.reward, 12);
   });
@@ -166,7 +167,8 @@ describe("army band", () => {
   });
 
   test("pays nothing inside the band", () => {
-    for (const ratio of [0.2, 0.25, 0.3]) {
+    const { armyTarget: t, armyBand: b } = REWARD_V2;
+    for (const ratio of [t - b, t, t + b]) {
       expect(
         stepReward(
           createRewardState(0, 1_000),
@@ -174,11 +176,12 @@ describe("army band", () => {
           { goldEarned: 0, troopIncome: 1_000 },
           at(ratio),
         ).army,
-      ).toBe(0);
+      ).toBeCloseTo(0, 12);
     }
   });
 
   test("punishes hoarding above the band as well as an empty army", () => {
+    const { armyTarget: t, armyBand: b } = REWARD_V2;
     const empty = stepReward(
       createRewardState(0, 1_000),
       REWARD_V2,
@@ -189,7 +192,7 @@ describe("army band", () => {
       createRewardState(0, 1_000),
       REWARD_V2,
       { goldEarned: 0, troopIncome: 1_000 },
-      at(0.45),
+      at(t + 4 * b),
     ).army;
     expect(empty).toBeLessThan(0);
     expect(hoard).toBeLessThan(0);
@@ -198,17 +201,18 @@ describe("army band", () => {
   });
 
   test("grows with the distance from the band", () => {
+    const { armyTarget: t, armyBand: b } = REWARD_V2;
     const oneBand = stepReward(
       createRewardState(0, 1_000),
       REWARD_V2,
       { goldEarned: 0, troopIncome: 1_000 },
-      at(0.35),
+      at(t + 1.5 * b),
     ).army;
     const twoBands = stepReward(
       createRewardState(0, 1_000),
       REWARD_V2,
       { goldEarned: 0, troopIncome: 1_000 },
-      at(0.4),
+      at(t + 2.5 * b),
     ).army;
     expect(oneBand).toBeLessThan(0);
     expect(twoBands).toBeLessThan(oneBand);

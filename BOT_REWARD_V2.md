@@ -16,7 +16,7 @@ aux tuiles et à `maxTroops`.
 | Part de tuiles (terminal)   | `w_end_tiles · tileShare`     | **supprimé**                                   |
 | Gain de troupes par seconde | absent                        | **potentiel `log1p(troopIncome)`**             |
 | Or                          | potentiel `log1p(goldEarned)` | conservé                                       |
-| Armée                       | malus sous 0,18, plafonné à 3 | **bande symétrique** 0,25 ± 0,05 (§7.2 quater) |
+| Armée                       | malus sous 0,18, plafonné à 3 | **bande symétrique** 0,35 ± 0,05 (§7.2 quater) |
 
 Le signal militaire devient donc : _produire plus de troupes par seconde_.
 
@@ -263,7 +263,7 @@ sans prendre en compte les dépenses ».
 | Or, par décision | potentiel `log1p(goldEarned)` | **supprimé**                                    |
 | Or, en terminal  | rien                          | `w_end_gold · log1p(goldEarned_T) / log1p(1e6)` |
 | Troupes/s        | potentiel dense               | inchangé                                        |
-| Armée            | malus dense sous 0,40         | **bande** 0,25 ± 0,05, des deux côtés           |
+| Armée            | malus dense sous 0,40         | **bande** 0,35 ± 0,05, des deux côtés           |
 
 `goldEarned` est le compteur **cumulé** du moteur : incrémenté dans `addGold()`,
 jamais décrémenté par `removeGold()`. Le terme mesure donc ce que le bot a
@@ -313,19 +313,27 @@ n'avait rien à dire sur le stockage.
 
 | Paramètre        | Valeur | Rôle                                            |
 | ---------------- | ------ | ----------------------------------------------- |
-| `armyTarget`     | 0,25   | centre de la bande                              |
-| `armyBand`       | 0,05   | demi-largeur : zone libre `[0,20 ; 0,30]`       |
-| `cArmyBand`      | 0,006  | malus par décision à une bande d'écart          |
-| `maxArmyDeficit` | 3      | l'écart cesse de croître à 3 bandes (0,10/0,40) |
+| `armyTarget`     | 0,35   | centre de la bande                              |
+| `armyBand`       | 0,05   | demi-largeur : zone libre `[0,30 ; 0,40]`       |
+| `cArmyBand`      | 0,004  | malus par décision à une bande d'écart          |
+| `maxArmyDeficit` | 3      | l'écart cesse de croître à 3 bandes (0,20/0,50) |
 | `armyPenaltyCap` | 6      | cumul maximal par épisode                       |
+
+Premier réglage essayé : `0,25 ± 0,05` (`[0,20 ; 0,30]`) avec `cArmyBand` 0,006.
+Mesuré sur le terrain à 19 acteurs en repartant du meilleur modèle : l'armée est
+bien descendue à 0,24–0,33 et `attack` est monté de 11 % à 28 %, mais les
+victoires se sont effondrées (éval 8/10 → **5/10** en trois itérations, part de
+tuiles 0,78 → 0,39–0,57). Contre 18 adversaires la réserve est nécessaire :
+toutes les séries gagnantes se situent entre 0,30 et 0,45. D'où le recentrage à
+**0,35 ± 0,05** et un malus réduit de moitié.
 
 Deux contraintes vérifiées par des tests :
 
-1. le bord bas 0,20 est **au-dessus** de `ARMY_FLOOR_RATIO` (0,18) et **égal**
-   au plancher de la roulette d'entraînement : le masque ne peut pas clouer
+1. le bord bas 0,30 est **au-dessus** de `ARMY_FLOOR_RATIO` (0,18) et du
+   plancher de la roulette d'entraînement (0,20) : le masque ne peut pas clouer
    l'armée à l'intérieur de la zone libre (c'est ce qui avait rendu le malus
    inerte) ;
-2. le bord haut 0,30 est **sous** l'optimum de revenu (0,422) : la bande apporte
+2. le bord haut 0,40 est **sous** l'optimum de revenu (0,422) : la bande apporte
    une information que le potentiel ne contient pas déjà.
 
 ### 7.2 ter Résultat mesuré du correctif (A/B, même protocole)

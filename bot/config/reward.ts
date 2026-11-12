@@ -112,22 +112,25 @@ export const REWARD_V2: RewardParams = {
   // loss of the same length, and small enough that gold and troop income still
   // separate two wins from each other.
   wWin: 2,
-  // 0.006 per decision at one band of deviation. The typical troop-income
-  // reward per decision is ~0.005, so one band out is about as loud as income
-  // and three bands out (0.018) is three times louder: enough to stop the
-  // policy hoarding, small enough that income still leads.
-  cArmyBand: 0.006,
-  // 0.25 with a +/-0.05 band leaves the army free in [0.20, 0.30]: 70-80 % of
-  // the cap is available for conquest, and 0.20 is the attack floor the
-  // training wheels already use. The engine's troops per second,
+  // 0.004 per decision at one band of deviation, i.e. 0.012 at three bands,
+  // against a typical troop-income reward of ~0.005 per decision: loud enough
+  // to hold the army in the band, quiet enough that income still leads.
+  //
+  // An earlier attempt used 0.006 against a [0.20, 0.30] band and lost 8/10 ->
+  // 5/10 eval wins in three iterations, with the army at 0.24-0.33 and the tile
+  // share collapsed to 0.39-0.57. Against 18 opponents the bot needs the
+  // reserve: every winning run so far has sat at 0.30-0.45.
+  cArmyBand: 0.004,
+  // 0.35 with a +/-0.05 band leaves the army free in [0.30, 0.40], the range
+  // every winning run has landed in, while still pulling back the drift to 0.47.
+  // The engine's troops per second,
   // `(10 + troops^0.73 / 4) * (1 - troops / maxTroops)`, peaks at a ratio of
-  // 0.422 for every cap, so the old 0.40 floor sat *at* the optimum: income
-  // rewarded hoarding and the policy drifted to 0.40-0.47 while 20 % of the map
-  // stayed neutral (measured over 30 iterations of the long-horizon run).
-  armyTarget: 0.25,
+  // 0.422 for every cap, so a free zone reaching above 0.42 would only repeat
+  // what the income potential already pays.
+  armyTarget: 0.35,
   armyBand: 0.05,
   maxArmyDeficit: 3,
-  // Reached in ~330 decisions at the maximum deviation, so a policy that never
+  // Reached in ~500 decisions at the maximum deviation, so a policy that never
   // returns to the band loses at most 6 per episode: three times the win bonus,
   // which is the point, but still bounded.
   armyPenaltyCap: 6,
