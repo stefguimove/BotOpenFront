@@ -52,7 +52,7 @@ export function selectOpponentSlots(
   }
 
   const byDistance = [...candidates].sort(
-    (a, b) => (a.features[0] ?? 1) - (b.features[0] ?? 1) || byId(a, b),
+    (a, b) => a.distance - b.distance || byId(a, b),
   );
   for (const slot of byDistance) add(slot);
 

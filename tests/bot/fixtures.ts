@@ -1,22 +1,15 @@
 import { PlayerType, UnitType } from "@openfront/engine-api/game/GameTypes";
 import {
-  playerFeatures,
-  structureFeatures,
-  buildFeatures,
-  TERRA_FEATURES,
-} from "../../bot/input/features";
-import {
   MAX_BUILD_OPTIONS,
   MAX_PLAYER_SLOTS,
-  SELF_DIM,
   type BuildOption,
   type Observation,
   type OpponentSlot,
-  type SelfInput,
+  type SelfState,
   type StructureSlot,
 } from "../../bot/input/types";
 
-export function selfInput(overrides: Partial<SelfInput> = {}): SelfInput {
+export function selfState(overrides: Partial<SelfState> = {}): SelfState {
   return {
     tick: 0,
     inSpawnPhase: false,
@@ -25,7 +18,7 @@ export function selfInput(overrides: Partial<SelfInput> = {}): SelfInput {
     peakTroops: 25_000,
     gold: 10_000,
     goldEarned: 10_000,
-    goldRate: 100,
+    goldRate: 1_000,
     tileRate: 5,
     tiles: 1_000,
     totalLandTiles: 1_048_576,
@@ -36,14 +29,17 @@ export function selfInput(overrides: Partial<SelfInput> = {}): SelfInput {
     samCount: 0,
     defensePostCount: 0,
     structureCount: 0,
+    readySiloCount: 0,
     incomingTroops: 0,
     outgoingTroops: 0,
     incomingAttackCount: 0,
     outgoingAttackCount: 0,
+    attackerCount: 0,
     allyCount: 0,
+    allyTroops: 0,
+    oldestAllianceAge: 0,
+    incomingRequestCount: 0,
     isTraitor: false,
-    doomsday: false,
-    overtime: false,
     ...overrides,
   };
 }
@@ -55,25 +51,21 @@ export function opponent(
   return {
     playerID: id,
     playerType: PlayerType.Nation,
-    features: playerFeatures({
-      distance: 100,
-      gold: 1_000,
-      maxTroops: 100_000,
-      troops: 1_000,
-      attackable: false,
-      allied: false,
-    }),
+    distance: 100,
+    tiles: 100,
+    gold: 1_000,
+    troops: 1_000,
+    maxTroops: 100_000,
+    incomingAttackCount: 0,
     border: false,
     attackable: false,
     allied: false,
+    allianceAge: 0,
     canRequestAlliance: false,
     canRejectAlliance: false,
     canExtendAlliance: false,
     canBreakAlliance: false,
     attackingMe: false,
-    tiles: 100,
-    gold: 1_000,
-    troops: 1_000,
     ...overrides,
   };
 }
@@ -85,7 +77,9 @@ export function structure(
   return {
     unitId,
     unitType: UnitType.City,
-    features: structureFeatures(1, false, 125_000, true, 49, 0.02),
+    level: 1,
+    levelRoom: 49,
+    underConstruction: false,
     upgradeable: true,
     affordable: true,
     cost: 125_000,
@@ -99,7 +93,6 @@ export function buildOption(
 ): BuildOption {
   return {
     unitType,
-    features: buildFeatures(true, true, true, 125_000),
     allowed: true,
     affordable: true,
     ready: true,
@@ -111,9 +104,9 @@ export function buildOption(
 export function observation(overrides: Partial<Observation> = {}): Observation {
   return {
     tick: 0,
-    self: new Array<number>(SELF_DIM).fill(0),
+    self: selfState(),
     opponents: [],
-    terra: { exists: false, features: TERRA_FEATURES },
+    terra: { exists: false },
     structures: [],
     builds: [],
     ...overrides,

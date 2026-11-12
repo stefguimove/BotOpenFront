@@ -88,12 +88,13 @@ export class GradientAccumulator {
     const { record } = step;
     const params = weights[record.model];
     const listwise = LISTWISE_MODELS.has(record.model);
-    // A listwise head's `chosen` indexes the candidate list; a categorical
-    // head's indexes its output units.
-    const count = listwise
-      ? Math.min(record.inputs.length, record.probs.length)
-      : MODEL_OUTPUT_DIM[record.model];
-    if (record.chosen < 0 || record.chosen >= count) return;
+    const stride = Math.max(1, record.stride);
+    // A listwise head's `chosen` indexes the flat (candidate x logit) vector; a
+    // categorical head's indexes its output units directly.
+    const candidates = listwise ? Math.floor(record.probs.length / stride) : 1;
+    const candidate = listwise ? Math.floor(record.chosen / stride) : 0;
+    if (record.chosen < 0 || record.chosen >= record.probs.length) return;
+    if (candidate >= record.inputs.length) return;
     if (!listwise && record.inputs.length === 0) return;
 
     const dOutput = policyGradient(record.probs, record.chosen, step.advantage);
@@ -103,16 +104,14 @@ export class GradientAccumulator {
     const acc = this.slot(record.model, params);
     acc.count += 1;
     if (listwise) {
-      // One forward per candidate: `dOutput[i]` is the gradient of logit i, so
-      // it only flows through candidate i's input.
-      for (let i = 0; i < count; i++) {
-        // Masked candidates score 0 and have no gradient; skip the forward.
-        if (dOutput[i] === 0) continue;
+      // One forward per candidate: the gradient of logit `r` of candidate `i`
+      // only flows through candidate `i`'s input.
+      for (let i = 0; i < candidates; i++) {
+        const slice = dOutput.slice(i * stride, (i + 1) * stride);
+        if (slice.every((value) => value === 0)) continue;
         this.accumulate(
           acc,
-          mlpBackward(params, mlpForward(params, record.inputs[i]), [
-            dOutput[i],
-          ]),
+          mlpBackward(params, mlpForward(params, record.inputs[i]), slice),
         );
       }
     } else {

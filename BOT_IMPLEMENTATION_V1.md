@@ -1710,7 +1710,7 @@ part de tuiles reste sous 0,01, la cause est toujours le ratio d'attaque
 Les pistes non retenues restent P3 (ratio plafonné à 0,5 hors défense), P4 (pas
 de ré-attaque d'une cible déjà attaquée) et P7 (biais initial vers 0,2).
 
-### 21.9 Inputs v2 (séparation des entrées par modèle)
+### 21.9 Inputs v2 (séparation des entrées par modèle) — **implémenté**
 
 Les entrées v1 sont communes : les 27 dims `self` sont données à chacun des six
 modèles, alors que les poids sont déjà séparés. Un plan de refonte est écrit
@@ -1720,5 +1720,15 @@ jointe `cible × ratio`), checkpoints `version: 2`.
 
 Décisions actées : séparation graduée (noyau + spécifique), features **combat**,
 **économie** et **risque diplomatique**, format de checkpoint cassé, action
-jointe, implémentation **avant** le prochain entraînement. Budget visé :
-5 modèles, 3 310 paramètres (−33 %), entrées 23/22/17/16/24.
+jointe, implémentation **avant** le prochain entraînement.
+
+État : implémenté. 5 modèles (plus de `ratio`), **3 310 paramètres** (−33 %),
+entrées 23/22/17/16/24, checkpoints `version: 2` (les v1 sont refusés avec un
+message explicite). Le calcul des retours partage toujours la récompense d'une
+décision entre les modèles choisis à ce tick — regrouper attaques et
+constructions dans une même décision réduirait ce fractionnement sans changer
+l'architecture.
+
+**Conséquence pour la suite : tout entraînement doit repartir de zéro.** Les
+checkpoints produits avant ce changement sont illisibles, y compris
+`bot/checkpoints/latest.json` du run de 50 itérations.

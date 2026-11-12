@@ -19,7 +19,6 @@ import {
   type TrainingWheels,
 } from "../actions/trainingWheels";
 import { validateIntent } from "../actions/validate";
-import { concatInputs } from "../input/encode";
 import {
   attackTargets,
   buildMask,
@@ -28,15 +27,22 @@ import {
   ratioMask,
 } from "../input/masks";
 import {
+  encodeCandidate,
+  encodeContext,
+  encodeCoreVector,
+  encodeModelInput,
+  MODEL_STRIDE,
+  type ModelName,
+} from "../input/schema";
+import {
   DIPLOMACY_ACTIONS,
   NOOP_ACTION,
   RATIO_BUCKETS,
-  SELF_INDEX,
   type Observation,
 } from "../input/types";
-import { mlpForward, makeRng, type Rng } from "../models/mlp";
+import { makeRng, mlpForward, type Rng } from "../models/mlp";
 import { argmaxMasked, maskedSoftmax, sampleIndex } from "../models/policy";
-import type { AgentWeights, ModelName } from "../models/weights";
+import { MODEL_OUTPUT_DIM, type AgentWeights } from "../models/weights";
 import {
   createObservationMemory,
   observeGame,
@@ -50,11 +56,12 @@ export interface DecisionRecord {
   tick: number;
   /**
    * One input per candidate that was scored, in sampling order, so a listwise
-   * model can be backpropagated through every candidate. The categorical
-   * heads (`ratio`, `diplomacyAction`) score a single input and have exactly
-   * one entry.
+   * model can be backpropagated through every candidate. `diplomacyAction`
+   * classifies a single input and has exactly one entry.
    */
   inputs: number[][];
+  /** Logits per candidate: 1 for pointer heads, 6 for the joint attack head. */
+  stride: number;
   mask: boolean[];
   chosen: number;
   probs: number[];
@@ -78,7 +85,7 @@ export interface BotAgentOptions {
  * The v1 bot: four specialised behaviours plus a rule-based meta-controller.
  *
  * - train: behaviours are picked uniformly among the applicable ones, and
- *   every categorical choice is sampled, so all six models see data.
+ *   every categorical choice is sampled, so all five models see data.
  * - eval: fixed priority (defend, diplomacy, build, upgrade, attack) and
  *   argmax actions.
  */
@@ -210,19 +217,38 @@ export class BotAgent implements Agent {
     }
   }
 
-  private scoreCandidates(model: ModelName, inputs: number[][]): number[] {
+  /** Core and context of a head, encoded once per decision. */
+  private modelInputs(
+    obs: Observation,
+    model: ModelName,
+  ): {
+    core: number[];
+    context: readonly number[];
+  } {
+    return {
+      core: encodeCoreVector(obs).values as number[],
+      context: encodeContext(model, obs),
+    };
+  }
+
+  /** Scores every candidate with one forward pass each; one logit array each. */
+  private scoreCandidates(
+    model: ModelName,
+    inputs: readonly number[][],
+  ): number[][] {
     return inputs.map((input) => {
       const cache = mlpForward(this.weights[model], input);
-      return cache.activations[cache.activations.length - 1][0];
+      return [...cache.activations[cache.activations.length - 1]];
     });
   }
 
   private sample(
     model: ModelName,
+    tick: number,
     inputs: number[][],
     logits: number[],
     mask: boolean[],
-    tick: number,
+    stride: number,
   ): number {
     const probs = maskedSoftmax(logits, mask);
     const chosen =
@@ -230,10 +256,24 @@ export class BotAgent implements Agent {
         ? sampleIndex(probs, this.rng)
         : argmaxMasked(logits, mask);
     if (chosen < 0) return -1;
-    this.lastDecisions.push({ model, tick, inputs, mask, chosen, probs });
+    this.lastDecisions.push({
+      model,
+      tick,
+      inputs,
+      stride,
+      mask,
+      chosen,
+      probs,
+    });
     return chosen;
   }
 
+  /**
+   * Joint target x ratio action: one decision, one credit. Every candidate is
+   * scored into `RATIO_BUCKETS.length` logits, the grid is flattened row by
+   * row, and the mask is the separable product of the target mask and the
+   * ratio mask.
+   */
   private chooseAttack(
     obs: Observation,
     player: Player,
@@ -241,25 +281,36 @@ export class BotAgent implements Agent {
   ): StampedIntent | null {
     const targets = attackTargets(obs);
     if (targets.length === 0) return null;
-    const inputs = targets.map((t) => concatInputs(obs.self, t.features));
-    const logits = this.scoreCandidates("attack", inputs);
-    const targetMask = targets.map(() => true);
-    const targetIndex = this.sample("attack", inputs, logits, targetMask, tick);
-    if (targetIndex < 0) return null;
 
-    const ratioLogits = mlpForward(this.weights.ratio, obs.self);
-    const ratioScores =
-      ratioLogits.activations[ratioLogits.activations.length - 1];
-    const rMask = ratioMask(obs);
-    const ratioIndex = this.sample(
-      "ratio",
-      [obs.self],
-      [...ratioScores],
-      rMask,
-      tick,
+    const ratioAllowed = ratioMask(obs);
+    if (!ratioAllowed.some(Boolean)) return null;
+
+    const { core, context } = this.modelInputs(obs, "attack");
+    const inputs = targets.map((target) =>
+      encodeModelInput(
+        "attack",
+        core,
+        context,
+        encodeCandidate(obs, { kind: "attack", target }),
+      ),
     );
-    if (ratioIndex < 0) return null;
+    const perCandidate = this.scoreCandidates("attack", inputs);
 
+    const stride = MODEL_STRIDE.attack;
+    const logits: number[] = [];
+    const mask: boolean[] = [];
+    for (let i = 0; i < targets.length; i++) {
+      for (let r = 0; r < stride; r++) {
+        logits.push(perCandidate[i][r] ?? 0);
+        mask.push(ratioAllowed[r]);
+      }
+    }
+
+    const chosen = this.sample("attack", tick, inputs, logits, mask, stride);
+    if (chosen < 0) return null;
+
+    const targetIndex = Math.floor(chosen / stride);
+    const ratioIndex = chosen % stride;
     const troops = RATIO_BUCKETS[ratioIndex] * player.troops();
     if (!(troops > 0)) return null;
     return attackIntent(this.clientID, targets[targetIndex].playerID, troops);
@@ -293,12 +344,26 @@ export class BotAgent implements Agent {
     }
     if (feasible.length === 0) return null;
 
+    const { core, context } = this.modelInputs(obs, "build");
     const inputs = feasible.map(({ option }) =>
-      concatInputs(obs.self, option.features),
+      encodeModelInput(
+        "build",
+        core,
+        context,
+        encodeCandidate(obs, { kind: "build", option }),
+      ),
     );
-    const logits = this.scoreCandidates("build", inputs);
+    const perCandidate = this.scoreCandidates("build", inputs);
+    const logits = perCandidate.map((scores) => scores[0] ?? 0);
     const mask = feasible.map(() => true);
-    const chosen = this.sample("build", inputs, logits, mask, obs.tick);
+    const chosen = this.sample(
+      "build",
+      obs.tick,
+      inputs,
+      logits,
+      mask,
+      MODEL_STRIDE.build,
+    );
     if (chosen < 0) return null;
 
     const unit = feasible[chosen].option.unitType;
@@ -322,10 +387,26 @@ export class BotAgent implements Agent {
     );
     if (candidates.length === 0) return null;
 
-    const inputs = candidates.map((s) => concatInputs(obs.self, s.features));
-    const logits = this.scoreCandidates("upgrade", inputs);
+    const { core, context } = this.modelInputs(obs, "upgrade");
+    const inputs = candidates.map((structure) =>
+      encodeModelInput(
+        "upgrade",
+        core,
+        context,
+        encodeCandidate(obs, { kind: "upgrade", structure }),
+      ),
+    );
+    const perCandidate = this.scoreCandidates("upgrade", inputs);
+    const logits = perCandidate.map((scores) => scores[0] ?? 0);
     const mask = candidates.map(() => true);
-    const chosen = this.sample("upgrade", inputs, logits, mask, obs.tick);
+    const chosen = this.sample(
+      "upgrade",
+      obs.tick,
+      inputs,
+      logits,
+      mask,
+      MODEL_STRIDE.upgrade,
+    );
     if (chosen < 0) return null;
 
     const structure = candidates[chosen];
@@ -347,15 +428,25 @@ export class BotAgent implements Agent {
       mask.breakAlliance.some(Boolean),
       true,
     ];
-    const actionCache = mlpForward(this.weights.diplomacyAction, obs.self);
-    const actionLogits =
-      actionCache.activations[actionCache.activations.length - 1];
+
+    const actionInputs = this.modelInputs(obs, "diplomacyAction");
+    const actionInput = encodeModelInput(
+      "diplomacyAction",
+      actionInputs.core,
+      actionInputs.context,
+      null,
+    );
+    const actionCache = mlpForward(this.weights.diplomacyAction, actionInput);
+    const actionLogits = [
+      ...actionCache.activations[actionCache.activations.length - 1],
+    ];
     const actionIndex = this.sample(
       "diplomacyAction",
-      [obs.self],
-      [...actionLogits],
-      actionMask,
       obs.tick,
+      [actionInput],
+      actionLogits,
+      actionMask,
+      MODEL_OUTPUT_DIM.diplomacyAction,
     );
     if (actionIndex < 0 || actionIndex === NOOP_ACTION) return null;
 
@@ -374,16 +465,27 @@ export class BotAgent implements Agent {
       .filter(({ allowed }) => allowed);
     if (candidateIndexes.length === 0) return null;
 
+    const { core, context } = this.modelInputs(obs, "diplomacyTarget");
     const inputs = candidateIndexes.map(({ index }) =>
-      concatInputs(obs.self, obs.opponents[index].features),
+      encodeModelInput(
+        "diplomacyTarget",
+        core,
+        context,
+        encodeCandidate(obs, {
+          kind: "diplomacyTarget",
+          slot: obs.opponents[index],
+        }),
+      ),
     );
-    const logits = this.scoreCandidates("diplomacyTarget", inputs);
+    const perCandidate = this.scoreCandidates("diplomacyTarget", inputs);
+    const logits = perCandidate.map((scores) => scores[0] ?? 0);
     const chosen = this.sample(
       "diplomacyTarget",
+      obs.tick,
       inputs,
       logits,
       candidateIndexes.map(() => true),
-      obs.tick,
+      MODEL_STRIDE.diplomacyTarget,
     );
     if (chosen < 0) return null;
 
@@ -415,17 +517,15 @@ export const V1_FORBIDDEN_BUILDS: readonly UnitType[] = [
  * Eval-mode behaviour priority: answer an incoming attack, then diplomacy,
  * then the economy, then expand.
  *
- * `incomingAttacks` is the threat signal — reading `outgoingTroops` here (an
- * earlier bug) made the bot attack on every single decision, because it almost
- * always has an attack in flight.
+ * The threat signal is `incomingAttackCount` — reading the bot's own outgoing
+ * troops here (an earlier bug) made it attack on every decision.
  */
 export function evalBehaviour(
   options: readonly Behaviour[],
   obs: Observation,
 ): Behaviour {
   const underAttack =
-    (obs.self[SELF_INDEX.incomingAttacks] ?? 0) > 0 ||
-    (obs.self[SELF_INDEX.incomingTroops] ?? 0) > 0;
+    obs.self.incomingAttackCount > 0 || obs.self.incomingTroops > 0;
 
   if (options.includes("attack") && underAttack) return "attack";
   if (

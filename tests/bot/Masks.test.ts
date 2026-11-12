@@ -8,7 +8,7 @@ import {
   ratioMask,
   upgradeMask,
 } from "../../bot/input/masks";
-import { RATIO_BUCKETS, SELF_INDEX } from "../../bot/input/types";
+import { RATIO_BUCKETS } from "../../bot/input/types";
 import { buildOption, observation, opponent, structure } from "./fixtures";
 
 describe("attackTargets", () => {
@@ -26,7 +26,7 @@ describe("attackTargets", () => {
   test("appends TerraNullius as targetID null", () => {
     const obs = observation({
       opponents: [opponent("a", { attackable: true })],
-      terra: { exists: true, features: [0, 0, 0, 0, 1, 0] },
+      terra: { exists: true },
     });
     const targets = attackTargets(obs);
     expect(targets).toHaveLength(2);
@@ -63,7 +63,7 @@ describe("buildMask", () => {
     const obs = observation({
       builds: [buildOption(UnitType.DefensePost), buildOption(UnitType.City)],
     });
-    obs.self[SELF_INDEX.incomingAttacks] = 1;
+    obs.self.incomingAttackCount = 1;
     expect(buildMask(obs)).toEqual([true, true]);
   });
 });
@@ -71,14 +71,14 @@ describe("buildMask", () => {
 describe("ratioMask", () => {
   test("exposes one entry per bucket", () => {
     const obs = observation();
-    obs.self[2] = 0.7; // log-scaled troops > 0
+    obs.self.troops = 12_000;
     expect(ratioMask(obs)).toHaveLength(RATIO_BUCKETS.length);
     expect(ratioMask(obs).every(Boolean)).toBe(true);
   });
 
   test("blocks everything without troops", () => {
     const obs = observation();
-    obs.self[2] = 0;
+    obs.self.troops = 0;
     expect(ratioMask(obs).some(Boolean)).toBe(false);
   });
 });

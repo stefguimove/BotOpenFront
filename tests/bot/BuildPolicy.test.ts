@@ -1,12 +1,17 @@
 import { UnitType } from "@openfront/engine-api/game/GameTypes";
 import { describe, expect, test } from "vitest";
 import { BUILD_GATE, buildGateAllows } from "../../bot/actions/buildPolicy";
-import { SELF_INDEX } from "../../bot/input/types";
 import { observation } from "./fixtures";
 
-function withSelf(index: number, value: number) {
+function withSelf(
+  changes: Partial<
+    typeof observation extends never
+      ? never
+      : ReturnType<typeof observation>["self"]
+  >,
+) {
   const obs = observation();
-  obs.self[index] = value;
+  Object.assign(obs.self, changes);
   return obs;
 }
 
@@ -16,7 +21,7 @@ describe("buildGateAllows", () => {
       expect(buildGateAllows(type, observation())).toBe(true);
     }
     expect(
-      buildGateAllows(UnitType.City, withSelf(SELF_INDEX.tick, 9_999)),
+      buildGateAllows(UnitType.City, { ...observation(), tick: 9_999 }),
     ).toBe(true);
   });
 
@@ -28,14 +33,11 @@ describe("buildGateAllows", () => {
     expect(
       buildGateAllows(
         UnitType.DefensePost,
-        withSelf(SELF_INDEX.incomingAttacks, 1),
+        withSelf({ incomingAttackCount: 1 }),
       ),
     ).toBe(true);
     expect(
-      buildGateAllows(
-        UnitType.DefensePost,
-        withSelf(SELF_INDEX.incomingTroops, 500),
-      ),
+      buildGateAllows(UnitType.DefensePost, withSelf({ incomingTroops: 500 })),
     ).toBe(true);
   });
 

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { RATIO_BUCKETS } from "../../bot/input/types";
 import { mlpForward } from "../../bot/models/mlp";
 import {
   createWeights,
@@ -6,9 +7,11 @@ import {
   MODEL_INPUT_DIM,
   MODEL_NAMES,
   MODEL_OUTPUT_DIM,
+  MODEL_STRIDE,
   toCheckpoint,
   totalParams,
   cloneWeights,
+  CHECKPOINT_VERSION,
 } from "../../bot/models/weights";
 
 describe("model dimensions", () => {
@@ -29,18 +32,27 @@ describe("model dimensions", () => {
     expect(params).toBeLessThan(10_000);
   });
 
-  test("forward produces one logit per candidate for the pointer heads", () => {
+  test("forward produces one logit per output unit", () => {
     const weights = createWeights(2);
-    for (const name of [
-      "attack",
-      "build",
-      "upgrade",
-      "diplomacyTarget",
-    ] as const) {
+    for (const name of MODEL_NAMES) {
       const input = new Array<number>(MODEL_INPUT_DIM[name]).fill(0.1);
       const cache = mlpForward(weights[name], input);
-      expect(cache.activations[cache.activations.length - 1]).toHaveLength(1);
+      expect(cache.activations[cache.activations.length - 1]).toHaveLength(
+        MODEL_OUTPUT_DIM[name],
+      );
     }
+  });
+
+  test("the attack head scores one logit per ratio bucket", () => {
+    expect(MODEL_OUTPUT_DIM.attack).toBe(RATIO_BUCKETS.length);
+    expect(MODEL_STRIDE.attack).toBe(RATIO_BUCKETS.length);
+    expect(MODEL_NAMES).not.toContain("ratio" as never);
+  });
+
+  test("inputs v2 budget is smaller than v1", () => {
+    // v1: 4 927 parameters over six heads; v2 merges ratio into attack.
+    expect(totalParams(createWeights(1))).toBeLessThan(4_927);
+    expect(MODEL_NAMES).toHaveLength(5);
   });
 });
 
@@ -56,7 +68,23 @@ describe("checkpoints", () => {
   test("rejects a malformed checkpoint", () => {
     expect(() => fromCheckpoint(null)).toThrow();
     expect(() => fromCheckpoint({})).toThrow();
-    expect(() => fromCheckpoint({ weights: {} })).toThrow();
+    expect(() =>
+      fromCheckpoint({ version: CHECKPOINT_VERSION, weights: {} }),
+    ).toThrow();
+  });
+
+  test("rejects a v1 checkpoint with an explicit message", () => {
+    // Inputs v2 changed every layer shape, so a v1 file cannot be converted.
+    expect(() => fromCheckpoint({ version: 1, weights: {} })).toThrow(
+      /v1 checkpoint/,
+    );
+  });
+
+  test("rejects weights whose shapes do not match the spec", () => {
+    const weights = createWeights(5);
+    const broken = JSON.parse(JSON.stringify(toCheckpoint(weights)));
+    broken.weights.attack.sizes[0] += 1;
+    expect(() => fromCheckpoint(broken)).toThrow(/input dim/);
   });
 
   test("cloneWeights is a deep copy", () => {

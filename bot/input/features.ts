@@ -1,10 +1,4 @@
-import { clamp01, logScale, safe } from "./normalize";
-import {
-  SELF_DIM,
-  PLAYER_FEATURE_DIM,
-  type PlayerInput,
-  type SelfInput,
-} from "./types";
+import { safe } from "./normalize";
 
 /** Scale references, fixed so the observation is deterministic. */
 export const REF = {
@@ -13,113 +7,49 @@ export const REF = {
   gold: 50_000_000,
   goldRate: 100_000,
   tileRate: 5_000,
-  distance: 2896, // TheBox diagonal, √(2048² + 2048²)
+  distance: 2896, // TheBox diagonal, sqrt(2048^2 + 2048^2)
   structures: 100,
   cities: 100,
+  /** Longest payback we bother distinguishing: one hour of revenue. */
+  paybackSeconds: 3_600,
+  /** Longest time-to-afford we bother distinguishing, in seconds. */
+  affordSeconds: 3_600,
 } as const;
 
 /**
- * The 27 self features, in a fixed order. Every entry is sanitized: a NaN
- * here would poison every model downstream.
+ * Seconds of revenue a purchase costs. This is the economy feature that makes
+ * a City (125k) and a Defense Post (50k) comparable: without it the model only
+ * ever saw an absolute cost and picked the cheapest thing available.
  */
-export function selfFeatures(input: SelfInput): number[] {
-  const maxTroops = Math.max(1, safe(input.maxTroops));
-  const troops = Math.max(0, safe(input.troops));
-  const totalLand = Math.max(1, safe(input.totalLandTiles));
-  const tileShare = clamp01(safe(input.tiles) / totalLand);
-  const winShare = clamp01(safe(input.winShare));
+export function paybackSeconds(cost: number, goldRate: number): number {
+  const rate = Math.max(1, safe(goldRate));
+  return Math.max(0, safe(cost)) / rate;
+}
 
-  const out = [
-    safe(input.tick) / REF.tick,
-    input.inSpawnPhase ? 1 : 0,
-    logScale(troops, REF.troops),
-    logScale(maxTroops, REF.troops),
-    clamp01(troops / maxTroops),
-    logScale(input.gold, REF.gold),
-    logScale(input.goldEarned, REF.gold),
-    clamp01(safe(input.goldRate) / REF.goldRate),
-    clamp01(safe(input.tileRate) / REF.tileRate),
-    logScale(input.tiles, totalLand),
-    tileShare,
-    // Positive = still below the win share; always orders progress the same way.
-    clamp01(winShare - tileShare),
-    clamp01(safe(input.cityCount) / REF.cities),
-    clamp01(safe(input.factoryCount) / REF.cities),
-    clamp01(safe(input.siloCount) / 10),
-    clamp01(safe(input.samCount) / 10),
-    clamp01(safe(input.defensePostCount) / REF.structures),
-    clamp01(safe(input.structureCount) / REF.structures),
-    clamp01(safe(input.incomingTroops) / Math.max(1, troops)),
-    clamp01(safe(input.outgoingTroops) / Math.max(1, troops)),
-    clamp01(safe(input.incomingAttackCount) / 10),
-    clamp01(safe(input.outgoingAttackCount) / 10),
-    clamp01(safe(input.allyCount) / 10),
-    clamp01(safe(input.peakTroops) / maxTroops),
-    input.isTraitor ? 1 : 0,
-    input.doomsday ? 1 : 0,
-    input.overtime ? 1 : 0,
-  ];
-
-  if (out.length !== SELF_DIM) {
-    throw new Error(`self feature dim ${out.length} !== ${SELF_DIM}`);
-  }
-  return out;
+/** Seconds until the bank can cover `cost` at the current revenue. */
+export function timeToAffordSeconds(
+  cost: number,
+  gold: number,
+  goldRate: number,
+): number {
+  const missing = Math.max(0, safe(cost) - safe(gold));
+  return missing / Math.max(1, safe(goldRate));
 }
 
 /**
- * The 6 per-opponent features: distance, gold, max troops, troops,
- * attackable, allied.
+ * My troops against the target's, in [0, 1] where 1 means "at least equal".
+ * The engine has no single defence multiplier to apply here, so this is the
+ * plain strength ratio; structures already show up through the target's
+ * maxTroops feature.
  */
-export function playerFeatures(input: PlayerInput): number[] {
-  const out = [
-    clamp01(safe(input.distance) / REF.distance),
-    logScale(input.gold, REF.gold),
-    logScale(input.maxTroops, REF.troops),
-    logScale(input.troops, REF.troops),
-    input.attackable ? 1 : 0,
-    input.allied ? 1 : 0,
-  ];
-  if (out.length !== PLAYER_FEATURE_DIM) {
-    throw new Error(
-      `player feature dim ${out.length} !== ${PLAYER_FEATURE_DIM}`,
-    );
-  }
-  return out;
+export function forceRatio(myTroops: number, targetTroops: number): number {
+  const ratio = safe(myTroops) / (Math.max(0, safe(targetTroops)) + 1);
+  return ratio > 1 ? 1 : ratio < 0 ? 0 : ratio;
 }
 
-/** TerraNullius pseudo-target features: neutral, adjacent, no gold or army. */
-export const TERRA_FEATURES = [0, 0, 0, 0, 1, 0];
-
-/** Structure features, in the STRUCTURE_FEATURE_DIM order. */
-export function structureFeatures(
-  level: number,
-  underConstruction: boolean,
-  cost: number,
-  affordable: boolean,
-  levelRoom: number,
-  shareOfCap: number,
-): number[] {
-  return [
-    clamp01(safe(level) / 10),
-    underConstruction ? 1 : 0,
-    clamp01(safe(cost) / 5_000_000),
-    affordable ? 1 : 0,
-    clamp01(safe(levelRoom) / 50),
-    clamp01(shareOfCap),
-  ];
-}
-
-/** Build option features, in the BUILD_FEATURE_DIM order. */
-export function buildFeatures(
-  allowed: boolean,
-  affordable: boolean,
-  ready: boolean,
-  cost: number,
-): number[] {
-  return [
-    allowed ? 1 : 0,
-    affordable ? 1 : 0,
-    ready ? 1 : 0,
-    clamp01(safe(cost) / 25_000_000),
-  ];
+/** Tile share of `tiles` on a map of `totalLandTiles`, clamped to [0, 1]. */
+export function tileShareOf(tiles: number, totalLandTiles: number): number {
+  const total = Math.max(1, safe(totalLandTiles));
+  const share = safe(tiles) / total;
+  return share > 1 ? 1 : share < 0 ? 0 : share;
 }

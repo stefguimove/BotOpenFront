@@ -1,11 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { SELF_INDEX } from "../../bot/input/types";
 import { evalBehaviour } from "../../bot/runtime/agent";
 import { observation, opponent } from "./fixtures";
 
 function underAttack(attacks: number) {
   const obs = observation();
-  obs.self[SELF_INDEX.incomingAttacks] = attacks;
+  obs.self.incomingAttackCount = attacks;
   return obs;
 }
 
@@ -14,8 +13,8 @@ describe("evalBehaviour", () => {
     // Regression: reading outgoingTroops here made eval attack on every
     // decision, so the bot never built and could not expand.
     const obs = observation();
-    obs.self[SELF_INDEX.outgoingAttacks] = 3;
-    obs.self[SELF_INDEX.outgoingTroops] = 5_000;
+    obs.self.outgoingAttackCount = 3;
+    obs.self.outgoingTroops = 5_000;
     expect(evalBehaviour(["attack", "build", "upgrade"], obs)).toBe("build");
   });
 
@@ -25,7 +24,7 @@ describe("evalBehaviour", () => {
 
   test("answers incoming troops even without an attack entry", () => {
     const obs = observation();
-    obs.self[SELF_INDEX.incomingTroops] = 400;
+    obs.self.incomingTroops = 400;
     expect(evalBehaviour(["attack", "build"], obs)).toBe("attack");
   });
 

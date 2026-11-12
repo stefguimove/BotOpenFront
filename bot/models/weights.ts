@@ -1,58 +1,30 @@
 import {
-  BUILD_FEATURE_DIM,
-  DIPLOMACY_ACTIONS,
-  PLAYER_FEATURE_DIM,
-  RATIO_BUCKETS,
-  SELF_DIM,
-  STRUCTURE_FEATURE_DIM,
-} from "../input/types";
+  LISTWISE_MODELS,
+  MODEL_INPUT_DIM,
+  MODEL_NAMES,
+  MODEL_STRIDE,
+  type ModelName,
+} from "../input/schema";
+import { RATIO_BUCKETS } from "../input/types";
 import { createMlp, paramCount, type MlpParams } from "./mlp";
 
 export const HIDDEN = 16;
 
-export const MODEL_INPUT_DIM = {
-  attack: SELF_DIM + PLAYER_FEATURE_DIM,
-  ratio: SELF_DIM,
-  build: SELF_DIM + BUILD_FEATURE_DIM,
-  upgrade: SELF_DIM + STRUCTURE_FEATURE_DIM,
-  diplomacyAction: SELF_DIM,
-  diplomacyTarget: SELF_DIM + PLAYER_FEATURE_DIM,
-} as const;
+export { LISTWISE_MODELS, MODEL_INPUT_DIM, MODEL_NAMES, MODEL_STRIDE };
+export type { ModelName };
 
-export type ModelName = keyof typeof MODEL_INPUT_DIM;
-
+/** Logits per head: one per candidate except `diplomacyAction`. */
 export const MODEL_OUTPUT_DIM: Record<ModelName, number> = {
-  attack: 1,
-  ratio: RATIO_BUCKETS.length,
+  attack: RATIO_BUCKETS.length,
   build: 1,
   upgrade: 1,
-  diplomacyAction: DIPLOMACY_ACTIONS.length,
+  diplomacyAction: 5,
   diplomacyTarget: 1,
 };
 
-/**
- * Models that score every candidate with their one-output MLP and take a
- * softmax over the candidate list (see BOT_IMPLEMENTATION_V1.md §4). Their
- * `chosen` index is a candidate index, not an output index, so the policy
- * gradient has to backpropagate through every candidate.
- */
-export const LISTWISE_MODELS: ReadonlySet<ModelName> = new Set<ModelName>([
-  "attack",
-  "build",
-  "upgrade",
-  "diplomacyTarget",
-]);
-
 export type AgentWeights = Record<ModelName, MlpParams>;
 
-export const MODEL_NAMES: readonly ModelName[] = [
-  "attack",
-  "ratio",
-  "build",
-  "upgrade",
-  "diplomacyAction",
-  "diplomacyTarget",
-];
+export const CHECKPOINT_VERSION = 2;
 
 export function createWeights(seed = 1): AgentWeights {
   const out = {} as AgentWeights;
@@ -87,29 +59,59 @@ export function cloneWeights(weights: AgentWeights): AgentWeights {
 
 /** JSON-safe shape used for checkpoints and `bot:play --weights`. */
 export interface WeightCheckpoint {
-  version: 1;
+  version: typeof CHECKPOINT_VERSION;
   createdAt: string;
   weights: AgentWeights;
 }
 
 export function toCheckpoint(weights: AgentWeights): WeightCheckpoint {
-  return { version: 1, createdAt: new Date(0).toISOString(), weights };
+  return {
+    version: CHECKPOINT_VERSION,
+    createdAt: new Date(0).toISOString(),
+    weights,
+  };
 }
 
+/**
+ * Reads a checkpoint. Version 1 checkpoints belong to the pre-inputs-v2
+ * format: their layer shapes cannot be interpreted, so they are rejected with
+ * an explicit message instead of loading a half-broken model.
+ */
 export function fromCheckpoint(value: unknown): AgentWeights {
-  const checkpoint = value as Partial<WeightCheckpoint> | null;
+  const checkpoint = value as { version?: unknown; weights?: unknown } | null;
   if (checkpoint === null || typeof checkpoint !== "object") {
     throw new Error("invalid checkpoint: not an object");
+  }
+  if (checkpoint.version === 1) {
+    throw new Error(
+      "v1 checkpoint: inputs changed (BOT_INPUTS_V2.md), retrain to get a v2 checkpoint",
+    );
+  }
+  if (checkpoint.version !== CHECKPOINT_VERSION) {
+    throw new Error(
+      `invalid checkpoint: version ${String(checkpoint.version)} !== ${CHECKPOINT_VERSION}`,
+    );
   }
   if (checkpoint.weights === undefined) {
     throw new Error("invalid checkpoint: no weights");
   }
+  const weights = checkpoint.weights as Record<string, MlpParams | undefined>;
   for (const name of MODEL_NAMES) {
-    const params = checkpoint.weights[name];
+    const params = weights[name];
     if (params === undefined) throw new Error(`checkpoint missing ${name}`);
     if (!Array.isArray(params.sizes) || !Array.isArray(params.weights)) {
       throw new Error(`checkpoint model ${name} is malformed`);
     }
+    if (params.sizes[0] !== MODEL_INPUT_DIM[name]) {
+      throw new Error(
+        `checkpoint model ${name} has input dim ${params.sizes[0]}, expected ${MODEL_INPUT_DIM[name]}`,
+      );
+    }
+    if (params.sizes[params.sizes.length - 1] !== MODEL_OUTPUT_DIM[name]) {
+      throw new Error(
+        `checkpoint model ${name} has output dim ${params.sizes[params.sizes.length - 1]}, expected ${MODEL_OUTPUT_DIM[name]}`,
+      );
+    }
   }
-  return checkpoint.weights;
+  return weights as AgentWeights;
 }

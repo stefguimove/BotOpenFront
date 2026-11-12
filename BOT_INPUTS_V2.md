@@ -1,6 +1,7 @@
 # Bot OpenFront — Inputs v2 : séparation des entrées par modèle
 
-Statut : **plan validé sur les principes, à implémenter avant le prochain entraînement**.
+Statut : **implémenté** (commit « inputs v2 »). Ce document reste la référence
+du format ; §15 consigne les écarts entre le plan et le code.
 Documents liés : [`BOT_PLAN.md`](BOT_PLAN.md) (actions), [`BOT_OBSERVATION.md`](BOT_OBSERVATION.md) (observation), [`BOT_IMPLEMENTATION_V1.md`](BOT_IMPLEMENTATION_V1.md) (implémentation v1, §6.4 récompenses, §21 état).
 
 ---
@@ -150,22 +151,25 @@ forte et disponible », ce que 27 dims génériques ne permettaient pas.
 
 ### 6.2 `build` — 22 dims
 
-Features d'**économie** : rentabilité et plaçabilité.
+Features d'**économie** : rentabilité et plaçabilité. `payback`, `timeToAfford`
+et `goldCoverage` dépendent du coût, donc de l'option : ils appartiennent au
+bloc **CANDIDAT**, pas au contexte (le contexte est calculé une fois par
+décision).
 
-| Bloc     | #   | Nom                | Formule                                                         |
-| -------- | --- | ------------------ | --------------------------------------------------------------- |
-| CONTEXTE | 0   | **`payback`**      | `logScale(cost / max(1, goldRate), 3600)` (secondes)            |
-|          | 1   | `goldCoverage`     | `clamp01(gold / max(1, cost))`                                  |
-|          | 2   | **`timeToAfford`** | `logScale(max(0, cost − gold) / max(1, goldRate), 3600)`        |
-|          | 3   | `cityCount`        | `clamp01(cities / 100)`                                         |
-|          | 4   | `factoryCount`     | `clamp01(factories / 100)`                                      |
-|          | 5   | `structureCount`   | `clamp01(structures / 100)`                                     |
-|          | 6   | `underAttack`      | `incomingAttacks > 0 ? 1 : 0` (raison de la porte Defense Post) |
-|          | 7   | `lateGame`         | `tick ≥ 3000 ? 1 : 0` (raison de la porte nuke)                 |
-| CANDIDAT | 0   | `allowed`          | `option.allowed ? 1 : 0`                                        |
-|          | 1   | `affordable`       | `option.affordable ? 1 : 0`                                     |
-|          | 2   | `ready`            | `option.ready ? 1 : 0`                                          |
-|          | 3   | `costNorm`         | `clamp01(cost / 25e6)`                                          |
+| Bloc     | #   | Nom                | Formule                                          |
+| -------- | --- | ------------------ | ------------------------------------------------ |
+| CONTEXTE | 0   | `cityCount`        | `clamp01(cities / 100)`                          |
+|          | 1   | `factoryCount`     | `clamp01(factories / 100)`                       |
+|          | 2   | `structureCount`   | `clamp01(structures / 100)`                      |
+|          | 3   | `underAttack`      | `incomingAttacks > 0 ? 1 : 0`                    |
+|          | 4   | `lateGame`         | `tick >= 3000 ? 1 : 0`                           |
+| CANDIDAT | 0   | `allowed`          | `option.allowed ? 1 : 0`                         |
+|          | 1   | `affordable`       | `option.affordable ? 1 : 0`                      |
+|          | 2   | `ready`            | `option.ready ? 1 : 0`                           |
+|          | 3   | `costNorm`         | `clamp01(cost / 25e6)`                           |
+|          | 4   | **`payback`**      | `logScale(cost / goldRate, 3600)` (secondes)     |
+|          | 5   | **`timeToAfford`** | `logScale(max(0, cost − gold) / goldRate, 3600)` |
+|          | 6   | `goldCoverage`     | `clamp01(gold / max(1, cost))`                   |
 
 `payback` et `timeToAfford` sont les features économiques nouvelles : elles
 expriment « combien de secondes de revenu » coûte une structure, ce qui rend les
@@ -174,18 +178,18 @@ de v1 (seul `cost/25e6` existait).
 
 ### 6.3 `upgrade` — 17 dims
 
-| Bloc     | #   | Nom              | Formule                       |
-| -------- | --- | ---------------- | ----------------------------- |
-| CONTEXTE | 0   | `payback`        | idem §6.2                     |
-|          | 1   | `structureCount` | `clamp01(structures / 100)`   |
-|          | 2   | `cityCount`      | `clamp01(cities / 100)`       |
-| CANDIDAT | 0   | `level`          | `clamp01(level / 10)`         |
-|          | 1   | `underConstr`    | `isUnderConstruction ? 1 : 0` |
-|          | 2   | `affordable`     | `affordable ? 1 : 0`          |
-|          | 3   | `levelRoom`      | `clamp01(levelRoom / 50)`     |
+| Bloc     | #   | Nom              | Formule                                          |
+| -------- | --- | ---------------- | ------------------------------------------------ |
+| CONTEXTE | 0   | `structureCount` | `clamp01(structures / 100)`                      |
+| CANDIDAT | 0   | `level`          | `clamp01(level / 10)`                            |
+|          | 1   | `underConstr`    | `isUnderConstruction ? 1 : 0`                    |
+|          | 2   | `affordable`     | `affordable ? 1 : 0`                             |
+|          | 3   | `levelRoom`      | `clamp01(levelRoom / 50)`                        |
+|          | 4   | `payback`        | `logScale(cost / goldRate, 3600)`                |
+|          | 5   | `timeToAfford`   | `logScale(max(0, cost − gold) / goldRate, 3600)` |
 
-(Les 6 dims `structureFeatures` de v1 sont ramenées à 4 : `costNorm` et
-`shareOfCap` disparaissent, `payback` les remplace avantageusement.)
+(Les 6 dims `structureFeatures` de v1 sont ramenées à 4 + les 2 features de
+rentabilité, qui remplacent `costNorm` et `shareOfCap`.)
 
 ### 6.4 `diplomacyAction` — 16 dims
 
@@ -391,3 +395,45 @@ Objectif : décider avec des chiffres si les inputs v2 valent leur complexité.
 - Curriculum automatique, PPO, réseau récurrent : inchangés.
 - Roue d'entraînement (§6.4.9 de `BOT_IMPLEMENTATION_V1.md`) : inchangée, elle
   vit au niveau du comportement, pas des entrées.
+
+---
+
+## 15. Écarts entre le plan et le code
+
+Détails tranchés pendant l'implémentation, tous vérifiés par des tests.
+
+| Point                      | Plan                                           | Code                                                                                                                                                  |
+| -------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `payback` / `timeToAfford` | contexte de `build` et `upgrade`               | **candidat** : ils dépendent du coût de l'option, donc du candidat                                                                                    |
+| `goldCoverage`             | contexte de `build`                            | candidat, même raison                                                                                                                                 |
+| Contexte `upgrade`         | `payback`, `structureCount`, `cityCount`       | `structureCount` seul ; `payback` est passé au candidat                                                                                               |
+| `forceRatio`               | `myTroops / (targetTroops × defenceBonus + 1)` | `myTroops / (targetTroops + 1)` : il n'existe aucun multiplicateur de défense dans `Config`. La défense est approchée par `targetMaxLog` (structures) |
+| `targetIsTribe`            | `PlayerType.Tribe`                             | `PlayerType.Bot` : les dix « tribus » Easy **sont** des bots moteur                                                                                   |
+| `allianceAge` (action)     | « l'alliance »                                 | âge de l'alliance **la plus ancienne** (une seule valeur comparable)                                                                                  |
+| `relationAge` (cible)      | âge de la relation                             | âge de l'alliance avec cette cible, 0 sinon                                                                                                           |
+| Distribution des encodeurs | un module par modèle                           | idem + `encodeCandidate()` dans `schema.ts`, qui aiguille par `kind`                                                                                  |
+| Checkpoint                 | `WeightCheckpoint.version = 2`                 | aussi `CheckpointFile.version = 2` (trainer), même constante                                                                                          |
+| `diplomacyAction`          | contexte seulement                             | `stride = 5`, un seul `inputs[0]`, traité à part dans le gradient                                                                                     |
+
+## 16. Vérifications exécutées
+
+```bash
+npx vitest run tests/bot --project node     # 200 tests
+npx tsc --noEmit
+npx oxlint bot tests/bot
+npx oxfmt --check bot tests/bot
+npx tsx bot/cli/bench.ts --config compact --ticks 200   # 602 ticks/s
+npx tsx bot/cli/play.ts --config compact --ticks 1200 --save-replay
+npx tsx bot/cli/train.ts --config compact --iterations 1 --episodes 2 --episode-ticks 600
+npx tsx bot/cli/train.ts --resume <checkpoint v2>        # reprend à l'itération suivante
+npx tsx bot/cli/play.ts --weights <checkpoint v1>        # refus explicite
+```
+
+Mesure à poids aléatoires (3 parties compactes de 1 800 ticks, mode `train`
+avec roulette) : part de tuiles 0,070, troupes finales 82 394, 0 mort ; intents
+`attack=52 %`, `allianceRequest=37 %`, `breakAlliance=8 %`, `build_unit=3 %`.
+Les poids étant aléatoires, ces chiffres servent de référence de non-régression,
+pas de qualité de jeu.
+
+Le protocole A/B de §12 reste à exécuter : il demande trois entraînements de
+200 parties, à lancer sur la machine distante.

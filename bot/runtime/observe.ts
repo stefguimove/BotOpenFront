@@ -2,19 +2,12 @@ import { PlayerType, UnitType } from "@openfront/engine-api/game/GameTypes";
 import type { Game, Player } from "@openfront/engine/game/Game";
 import { selectOpponentSlots } from "../input/candidates";
 import {
-  buildFeatures,
-  playerFeatures,
-  selfFeatures,
-  structureFeatures,
-  TERRA_FEATURES,
-} from "../input/features";
-import {
   MAX_BUILD_OPTIONS,
   MAX_STRUCTURE_SLOTS,
   type BuildOption,
   type Observation,
   type OpponentSlot,
-  type SelfInput,
+  type SelfState,
   type StructureSlot,
 } from "../input/types";
 
@@ -66,10 +59,6 @@ export function createObservationMemory(): ObservationMemory {
   };
 }
 
-function maxTroopsOf(game: Game, player: Player): number {
-  return game.config().maxTroops(player);
-}
-
 function readySiloCount(player: Player): number {
   return player
     .units(UnitType.MissileSilo)
@@ -93,37 +82,33 @@ function opponentSlot(game: Game, me: Player, other: Player): OpponentSlot {
   const allied = me.isAlliedWith(other);
   const alliance = me.allianceWith(other);
   const isBot = other.type() === PlayerType.Bot;
-
-  const incoming = me
-    .incomingAllianceRequests()
-    .some((request) => request.requestor() === other);
-  const outgoing = me
+  const requestsToOther = me
     .outgoingAllianceRequests()
     .some((request) => request.recipient() === other);
-
-  const distance = border ? 0 : distanceTo(game, me, other);
-  const troops = Math.max(0, other.troops());
-  const maxTroops = Math.max(1, maxTroopsOf(game, other));
 
   return {
     playerID: other.id(),
     playerType: other.type(),
-    features: playerFeatures({
-      distance,
-      gold: Number(other.gold()),
-      maxTroops,
-      troops,
-      attackable,
-      allied,
-    }),
+    distance: border ? 0 : distanceTo(game, me, other),
+    tiles: other.numTilesOwned(),
+    gold: Number(other.gold()),
+    troops: Math.max(0, other.troops()),
+    maxTroops: Math.max(1, game.config().maxTroops(other)),
+    incomingAttackCount: other.incomingAttacks().length,
     border,
     attackable,
     allied,
+    allianceAge:
+      allied && alliance !== null
+        ? Math.max(0, game.ticks() - alliance.createdAt())
+        : 0,
     // Tribes are never alliance partners in v1: the mask and the observation
     // both enforce it, so a bug in one cannot bypass the other.
     canRequestAlliance:
-      !isBot && !allied && !outgoing && me.canSendAllianceRequest(other),
-    canRejectAlliance: incoming,
+      !isBot && !allied && !requestsToOther && me.canSendAllianceRequest(other),
+    canRejectAlliance: me
+      .incomingAllianceRequests()
+      .some((request) => request.requestor() === other),
     canExtendAlliance:
       allied &&
       alliance !== null &&
@@ -133,9 +118,6 @@ function opponentSlot(game: Game, me: Player, other: Player): OpponentSlot {
     attackingMe: me
       .incomingAttacks()
       .some((attack) => attack.attacker() === other),
-    tiles: other.numTilesOwned(),
-    gold: Number(other.gold()),
-    troops,
   };
 }
 
@@ -145,19 +127,13 @@ function structureSlots(game: Game, me: Player): StructureSlot[] {
   for (const unit of me.units([...V1_STRUCTURE_TYPES])) {
     if (!unit.isActive() || unit.isMarkedForDeletion()) continue;
     const cost = game.unitInfo(unit.type()).cost(game, me);
-    const upgradeable = me.canUpgradeUnit(unit);
     out.push({
       unitId: unit.id(),
       unitType: unit.type(),
-      features: structureFeatures(
-        unit.level(),
-        unit.isUnderConstruction(),
-        Number(cost),
-        gold >= cost,
-        50 - unit.level(),
-        unit.level() / 50,
-      ),
-      upgradeable,
+      level: unit.level(),
+      levelRoom: Math.max(0, 50 - unit.level()),
+      underConstruction: unit.isUnderConstruction(),
+      upgradeable: me.canUpgradeUnit(unit),
       affordable: gold >= cost,
       cost: Number(cost),
     });
@@ -173,16 +149,13 @@ function buildOptions(game: Game, me: Player): BuildOption[] {
   for (const type of V1_BUILD_TYPES) {
     const allowed = !game.config().isUnitDisabled(type);
     const cost = game.unitInfo(type).cost(game, me);
-    const affordable = gold >= cost;
-    // Nukes need a ready silo; structures need buildable ground, which the
-    // action layer picks. `ready` stays true for structures.
-    const ready = NUKES.has(type) ? silos > 0 : true;
     out.push({
       unitType: type,
-      features: buildFeatures(allowed, affordable, ready, Number(cost)),
       allowed,
-      affordable,
-      ready,
+      affordable: gold >= cost,
+      // Nukes need a ready silo; structures need buildable ground, which the
+      // action layer picks. `ready` stays true for structures.
+      ready: NUKES.has(type) ? silos > 0 : true,
       cost: Number(cost),
     });
     if (out.length >= MAX_BUILD_OPTIONS) break;
@@ -190,9 +163,17 @@ function buildOptions(game: Game, me: Player): BuildOption[] {
   return out;
 }
 
+function distinctAttackers(me: Player): number {
+  const ids = new Set<string>();
+  for (const attack of me.incomingAttacks()) {
+    ids.add(attack.attacker().id());
+  }
+  return ids.size;
+}
+
 /**
- * Builds the observation for `clientID`'s player. `memory` carries the
- * running aggregates (peak troops, smoothed rates) and is mutated.
+ * Builds the observation for `clientID`'s player. `memory` carries the running
+ * aggregates (peak troops, smoothed rates) and is mutated.
  */
 export function observeGame(
   game: Game,
@@ -240,22 +221,25 @@ export function observeGame(
   const countOf = (type: UnitType) =>
     me.units(type).filter((u) => !u.isMarkedForDeletion()).length;
 
-  const winShare =
-    game.config().percentageTilesOwnedToWin(game.elapsedGameSeconds()) / 100;
+  const allies = me.allies();
+  let allyTroops = 0;
+  let oldestAllianceAge = 0;
+  for (const ally of allies) {
+    allyTroops += Math.max(0, ally.troops());
+    const alliance = me.allianceWith(ally);
+    if (alliance !== null) {
+      oldestAllianceAge = Math.max(
+        oldestAllianceAge,
+        Math.max(0, tick - alliance.createdAt()),
+      );
+    }
+  }
 
-  const counts = {
-    city: countOf(UnitType.City),
-    factory: countOf(UnitType.Factory),
-    silo: countOf(UnitType.MissileSilo),
-    sam: countOf(UnitType.SAMLauncher),
-    defensePost: countOf(UnitType.DefensePost),
-  };
-
-  const selfInput: SelfInput = {
+  const self: SelfState = {
     tick,
     inSpawnPhase: game.inSpawnPhase(),
     troops,
-    maxTroops: maxTroopsOf(game, me),
+    maxTroops: game.config().maxTroops(me),
     peakTroops: memory.peakTroops,
     gold: Number(me.gold()),
     goldEarned,
@@ -263,31 +247,32 @@ export function observeGame(
     tileRate: memory.tileRate,
     tiles,
     totalLandTiles: game.totalLandTiles(),
-    winShare,
-    cityCount: counts.city,
-    factoryCount: counts.factory,
-    siloCount: counts.silo,
-    samCount: counts.sam,
-    defensePostCount: counts.defensePost,
+    winShare:
+      game.config().percentageTilesOwnedToWin(game.elapsedGameSeconds()) / 100,
+    cityCount: countOf(UnitType.City),
+    factoryCount: countOf(UnitType.Factory),
+    siloCount: countOf(UnitType.MissileSilo),
+    samCount: countOf(UnitType.SAMLauncher),
+    defensePostCount: countOf(UnitType.DefensePost),
     structureCount: structures.length,
+    readySiloCount: readySiloCount(me),
     incomingTroops: incoming.reduce((sum, a) => sum + a.troops(), 0),
     outgoingTroops: outgoing.reduce((sum, a) => sum + a.troops(), 0),
     incomingAttackCount: incoming.length,
     outgoingAttackCount: outgoing.length,
-    allyCount: me.allies().length,
+    attackerCount: distinctAttackers(me),
+    allyCount: allies.length,
+    allyTroops,
+    oldestAllianceAge,
+    incomingRequestCount: me.incomingAllianceRequests().length,
     isTraitor: me.isTraitor(),
-    doomsday: game.config().doomsdayClockConfig().enabled,
-    overtime: game.config().overtimeConfig().enabled,
   };
 
   return {
     tick,
-    self: selfFeatures(selfInput),
+    self,
     opponents,
-    terra: {
-      exists: me.sharesBorderWith(game.terraNullius()),
-      features: TERRA_FEATURES,
-    },
+    terra: { exists: me.sharesBorderWith(game.terraNullius()) },
     structures: structureSlots(game, me),
     builds: buildOptions(game, me),
   };

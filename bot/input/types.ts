@@ -3,54 +3,31 @@ import type {
   UnitType,
 } from "@openfront/engine-api/game/GameTypes";
 
-/** 6 features per opponent (see features.playerFeatures). */
-export const PLAYER_FEATURE_DIM = 6;
 /** Slots reserved for opponents: 12 real in the target config + padding. */
 export const MAX_PLAYER_SLOTS = 16;
 
-/** Self vector size (see features.selfFeatures). */
-export const SELF_DIM = 27;
+export const MAX_STRUCTURE_SLOTS = 16;
+export const MAX_BUILD_OPTIONS = 8;
 
 /**
- * Named offsets into the self vector. `selfFeatures` writes them in this
- * order; read them by name so an index cannot silently drift (an earlier bug
- * read `outgoingTroops` where `incomingTroops` was meant).
+ * Shared core vector: the ten numbers every model receives. Anything only one
+ * or two models need belongs in that model's context instead — see
+ * BOT_INPUTS_V2.md §5 for the admission rule (>= 3 models).
  */
-export const SELF_INDEX = {
+export const CORE_DIM = 10;
+
+export const CORE_INDEX = {
   tick: 0,
-  inSpawnPhase: 1,
-  troops: 2,
-  maxTroops: 3,
-  troopRatio: 4,
-  gold: 5,
-  goldEarned: 6,
-  goldRate: 7,
-  tileRate: 8,
-  tiles: 9,
-  tileShare: 10,
-  winGap: 11,
-  cities: 12,
-  factories: 13,
-  silos: 14,
-  sams: 15,
-  defensePosts: 16,
-  structures: 17,
-  incomingTroops: 18,
-  outgoingTroops: 19,
-  incomingAttacks: 20,
-  outgoingAttacks: 21,
-  allies: 22,
-  peakRatio: 23,
-  traitor: 24,
-  doomsday: 25,
-  overtime: 26,
+  spawnPhase: 1,
+  troopRatio: 2,
+  troopsLog: 3,
+  tileShare: 4,
+  winGap: 5,
+  goldRate: 6,
+  tileRate: 7,
+  threat: 8,
+  myAttacks: 9,
 } as const;
-
-export const STRUCTURE_FEATURE_DIM = 6;
-export const MAX_STRUCTURE_SLOTS = 16;
-
-export const BUILD_FEATURE_DIM = 4;
-export const MAX_BUILD_OPTIONS = 8;
 
 /** Discrete attack ratios of the bot's current troops. */
 export const RATIO_BUCKETS = [0.1, 0.2, 1 / 3, 0.5, 0.75, 1] as const;
@@ -66,8 +43,11 @@ export const DIPLOMACY_ACTIONS = [
 export type DiplomacyAction = (typeof DIPLOMACY_ACTIONS)[number];
 export const NOOP_ACTION = DIPLOMACY_ACTIONS.length - 1;
 
-/** Inputs of the self vector; plain numbers so it is unit-testable. */
-export interface SelfInput {
+/**
+ * The bot's own state, as raw numbers. Models read this through the core and
+ * context encoders; masks and rules read the fields by name.
+ */
+export interface SelfState {
   tick: number;
   inSpawnPhase: boolean;
   troops: number;
@@ -89,51 +69,54 @@ export interface SelfInput {
   samCount: number;
   defensePostCount: number;
   structureCount: number;
+  /** Silos active, off cooldown and built: a nuke needs one. */
+  readySiloCount: number;
   incomingTroops: number;
   outgoingTroops: number;
   incomingAttackCount: number;
   outgoingAttackCount: number;
+  /** Distinct players currently attacking the bot. */
+  attackerCount: number;
   allyCount: number;
+  /** Sum of allied troops. */
+  allyTroops: number;
+  /** Age in ticks of the oldest alliance, 0 when there is none. */
+  oldestAllianceAge: number;
+  incomingRequestCount: number;
   isTraitor: boolean;
-  doomsday: boolean;
-  overtime: boolean;
 }
 
-/** Inputs of one opponent's 6-feature vector. */
-export interface PlayerInput {
-  /** Manhattan distance to the bot, 0 when they share a border. */
-  distance: number;
-  gold: number;
-  maxTroops: number;
-  troops: number;
-  attackable: boolean;
-  allied: boolean;
-}
-
-/** One opponent candidate, metadata included for masks and intents. */
+/** One opponent candidate: raw metadata, encoded per model on demand. */
 export interface OpponentSlot {
   playerID: string;
   playerType: PlayerType;
-  features: number[];
+  /** Manhattan distance between spawns; 0 when they share a border. */
+  distance: number;
+  tiles: number;
+  gold: number;
+  troops: number;
+  maxTroops: number;
+  /** Attacks this player currently sends at the bot. */
+  incomingAttackCount: number;
   border: boolean;
   attackable: boolean;
   allied: boolean;
+  /** Age in ticks of the alliance with this player, 0 when not allied. */
+  allianceAge: number;
   canRequestAlliance: boolean;
   canRejectAlliance: boolean;
   canExtendAlliance: boolean;
   canBreakAlliance: boolean;
   attackingMe: boolean;
-  tiles: number;
-  gold: number;
-  troops: number;
 }
 
 /** A structure the bot owns and could upgrade. */
 export interface StructureSlot {
   unitId: number;
   unitType: UnitType;
-  /** [level, isUnderConstruction, costNormalized, affordable, levelRoom, shareOfCap] */
-  features: number[];
+  level: number;
+  levelRoom: number;
+  underConstruction: boolean;
   upgradeable: boolean;
   affordable: boolean;
   cost: number;
@@ -142,8 +125,6 @@ export interface StructureSlot {
 /** A buildable unit type, with affordability and readiness. */
 export interface BuildOption {
   unitType: UnitType;
-  /** [allowed, affordable, ready, costNormalized] */
-  features: number[];
   allowed: boolean;
   affordable: boolean;
   ready: boolean;
@@ -152,21 +133,10 @@ export interface BuildOption {
 
 export interface Observation {
   tick: number;
-  self: number[];
+  self: SelfState;
   opponents: OpponentSlot[];
-  /** TerraNullius pseudo-target, never a real player. */
-  terra: { exists: boolean; features: number[] };
+  /** True when the bot borders TerraNullius, an extra attack target. */
+  terra: { exists: boolean };
   structures: StructureSlot[];
   builds: BuildOption[];
-}
-
-/** Tensors handed to the models. */
-export interface EncodedObservation {
-  self: Float32Array;
-  players: Float32Array;
-  playerMask: Uint8Array;
-  structures: Float32Array;
-  structureMask: Uint8Array;
-  builds: Float32Array;
-  buildMask: Uint8Array;
 }

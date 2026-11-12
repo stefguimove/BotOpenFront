@@ -68,9 +68,8 @@ describe("selectOpponentSlots", () => {
         gold: 19 - i,
         troops: i % 2,
       });
-      slot.features = [...slot.features];
       // p10 is closest but wins no metric.
-      slot.features[0] = i === 10 ? 0.01 : 0.9;
+      slot.distance = i === 10 ? 1 : 2_000;
       return slot;
     });
     const selected = selectOpponentSlots(candidates);

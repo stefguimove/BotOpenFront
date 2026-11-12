@@ -1,5 +1,5 @@
 import { UnitType } from "@openfront/engine-api/game/GameTypes";
-import { SELF_INDEX, type Observation } from "../input/types";
+import type { Observation } from "../input/types";
 
 /**
  * Rule-based build gating for v1.
@@ -38,10 +38,7 @@ export function buildGateAllows(type: UnitType, obs: Observation): boolean {
 
   if (type === UnitType.DefensePost) {
     // Only in reaction to an actual attack, never as the first purchase.
-    return (
-      (obs.self[SELF_INDEX.incomingAttacks] ?? 0) > 0 ||
-      (obs.self[SELF_INDEX.incomingTroops] ?? 0) > 0
-    );
+    return obs.self.incomingAttackCount > 0 || obs.self.incomingTroops > 0;
   }
 
   if (LATE.has(type)) {

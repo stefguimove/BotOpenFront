@@ -13,6 +13,7 @@ import {
   BOT_CLIENT_ID,
 } from "../config/target";
 import {
+  CHECKPOINT_VERSION,
   cloneWeights,
   createWeights,
   fromCheckpoint,
@@ -36,7 +37,8 @@ export type { EpisodeRun, RunEpisodeOptions } from "./episode";
 export { runEpisode };
 
 export interface CheckpointFile {
-  version: 1;
+  /** Same format version as `WeightCheckpoint` (BOT_INPUTS_V2.md §9). */
+  version: typeof CHECKPOINT_VERSION;
   iteration: number;
   weights: AgentWeights;
 }
@@ -51,7 +53,11 @@ export function saveCheckpoint(
     dir,
     `iteration-${String(iteration).padStart(5, "0")}.json`,
   );
-  const payload: CheckpointFile = { version: 1, iteration, weights };
+  const payload: CheckpointFile = {
+    version: CHECKPOINT_VERSION,
+    iteration,
+    weights,
+  };
   fs.writeFileSync(file, JSON.stringify(payload));
   fs.writeFileSync(path.join(dir, "latest.json"), JSON.stringify(payload));
   return file;
@@ -60,7 +66,11 @@ export function saveCheckpoint(
 export function loadCheckpoint(file: string): CheckpointFile {
   const raw = JSON.parse(fs.readFileSync(file, "utf8"));
   const weights = fromCheckpoint(raw);
-  return { version: 1, iteration: raw.iteration ?? 0, weights };
+  return {
+    version: CHECKPOINT_VERSION,
+    iteration: typeof raw.iteration === "number" ? raw.iteration : 0,
+    weights,
+  };
 }
 
 export interface TrainOptions {

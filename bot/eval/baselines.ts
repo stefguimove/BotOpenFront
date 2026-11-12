@@ -94,9 +94,9 @@ export class ScriptedAgent implements Agent {
     if (terra !== undefined) {
       return [attackIntent(this.clientID, null, troops)];
     }
-    const weakest = [...targets].sort(
-      (a, b) => (a.features[3] ?? 0) - (b.features[3] ?? 0),
-    )[0];
+    const troopsOf = (target: (typeof targets)[number]): number =>
+      target.slot < 0 ? 0 : (obs.opponents[target.slot]?.troops ?? 0);
+    const weakest = [...targets].sort((a, b) => troopsOf(a) - troopsOf(b))[0];
     return [attackIntent(this.clientID, weakest.playerID, troops)];
   }
 }

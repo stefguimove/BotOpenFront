@@ -85,12 +85,17 @@ describe("BotAgent", () => {
     // Every sampled decision must reference a model the trainer knows.
     for (const decision of result.decisions) {
       // Scoring heads keep one input per candidate, so the trainer can
-      // backpropagate the listwise gradient through every one of them;
-      // categorical heads score a single input.
+      // backpropagate the listwise gradient through every one of them; the
+      // mask is flat (candidates x stride) and the joint attack head produces
+      // one logit per ratio bucket.
       if (LISTWISE_MODELS.has(decision.model)) {
-        expect(decision.inputs.length).toBe(decision.probs.length);
+        expect(decision.inputs.length * decision.stride).toBe(
+          decision.probs.length,
+        );
+        expect(decision.mask).toHaveLength(decision.probs.length);
       } else {
         expect(decision.inputs).toHaveLength(1);
+        expect(decision.stride).toBe(decision.probs.length);
       }
       for (const input of decision.inputs)
         expect(input.length).toBeGreaterThan(0);

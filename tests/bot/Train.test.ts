@@ -8,6 +8,7 @@ import { cloneParams, mlpForward } from "../../bot/models/mlp";
 import { maskedSoftmax } from "../../bot/models/policy";
 import {
   createWeights,
+  MODEL_STRIDE,
   MODEL_INPUT_DIM,
   MODEL_NAMES,
   totalParams,
@@ -29,23 +30,24 @@ import {
   train,
 } from "../../bot/train/train";
 
+/**
+ * Six candidates, one logit each: the simplest listwise shape. The joint attack
+ * head is built from the same record type with `stride: 6`, covered by
+ * JointAttack.test.ts.
+ */
 function fakeDecision(
-  model: "attack" | "ratio",
+  model: "attack" | "build",
   chosen: number,
 ): DecisionRecord {
-  const size = model === "attack" ? 33 : 27;
-  // `attack` is a listwise head: one input per candidate. `ratio` scores a
-  // single input and has six output units.
-  const inputs =
-    model === "attack"
-      ? [0.1, -0.2, 0.3, 0.4, 0.5, 0.6].map((v) =>
-          new Array<number>(size).fill(v),
-        )
-      : [new Array<number>(size).fill(0.1)];
+  const size = MODEL_INPUT_DIM[model];
+  const inputs = [0.1, -0.2, 0.3, 0.4, 0.5, 0.6].map((v) =>
+    new Array<number>(size).fill(v),
+  );
   return {
     model,
     tick: 0,
     inputs,
+    stride: 1,
     mask: [true, true, true, true, true, true],
     chosen,
     probs: [1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6],
@@ -57,7 +59,7 @@ describe("computeAdvantages", () => {
     const steps: TrajectoryStep[] = [
       { record: fakeDecision("attack", 0), reward: 1 },
       { record: fakeDecision("attack", 1), reward: 0 },
-      { record: fakeDecision("ratio", 2), reward: -1 },
+      { record: fakeDecision("build", 2), reward: -1 },
     ];
     const returns = computeAdvantages(steps, 0.99);
     expect(returns).toHaveLength(3);
@@ -95,27 +97,32 @@ describe("GradientAccumulator", () => {
   });
 
   test("listwise decisions backpropagate through every candidate", () => {
+    // The joint attack head: `stride` logits per candidate, flattened row by
+    // row. Every candidate shares the same parameters, so the gradient must
+    // sum over all of them.
     const weights = createWeights(2);
     const model = "attack" as const;
-    const mask = [true, true, true];
+    const stride = MODEL_STRIDE.attack;
     const inputs = [0.1, -0.2, 0.3].map((v) =>
       new Array<number>(MODEL_INPUT_DIM.attack).fill(v),
     );
-    const logits = () =>
-      inputs.map((x) => {
-        const activations = mlpForward(weights[model], x).activations;
-        return activations[activations.length - 1][0];
-      });
-    const probs = maskedSoftmax(logits(), mask);
-    // A candidate other than the first: the old bounds check dropped these.
-    const chosen = 1;
+    const flatLogits = (): number[] => {
+      const out: number[] = [];
+      for (const input of inputs) {
+        const activations = mlpForward(weights[model], input).activations;
+        out.push(...activations[activations.length - 1]);
+      }
+      return out;
+    };
+    const mask = new Array<boolean>(inputs.length * stride).fill(true);
+    const probs = maskedSoftmax(flatLogits(), mask);
+    // Candidate 1, bucket 2: not the first candidate, not the first bucket.
+    const chosen = 1 * stride + 2;
     const advantage = 0.7;
 
-    // Numerical gradient of -advantage * log pi(chosen), around the current
-    // weights, where every candidate's logit depends on the same parameters.
     const before = cloneParams(weights[model]);
     const loss = () =>
-      -advantage * Math.log(maskedSoftmax(logits(), mask)[chosen]);
+      -advantage * Math.log(maskedSoftmax(flatLogits(), mask)[chosen]);
     const numerical: number[][][] = before.weights.map((layer, l) =>
       layer.map((row, o) => row.map((_, i) => 0)),
     );
@@ -142,23 +149,28 @@ describe("GradientAccumulator", () => {
     };
     const accumulator = new GradientAccumulator();
     accumulator.add(
-      { record: { model, tick: 0, inputs, mask, chosen, probs }, advantage },
+      {
+        record: { model, tick: 0, inputs, stride, mask, chosen, probs },
+        advantage,
+      },
       weights,
       options,
     );
     expect(accumulator.counts()).toEqual({ attack: 1 });
     accumulator.apply(weights, options);
 
+    let checked = 0;
     for (let l = 0; l < before.weights.length; l++) {
       for (let o = 0; o < before.weights[l].length; o++) {
         for (let i = 0; i < before.weights[l][o].length; i++) {
-          // `apply` moved each weight by -lr * gradient.
           const gradient =
             before.weights[l][o][i] - weights[model].weights[l][o][i];
           expect(gradient).toBeCloseTo(numerical[l][o][i], 5);
+          checked += 1;
         }
       }
     }
+    expect(checked).toBeGreaterThan(0);
   });
 
   test("ignores a decision whose chosen index is out of range", () => {
@@ -175,12 +187,13 @@ describe("GradientAccumulator", () => {
 
 describe("EpisodeRewards", () => {
   const decision = (tick: number): DecisionRecord => ({
-    model: "ratio",
+    model: "build",
     tick,
-    inputs: [new Array<number>(MODEL_INPUT_DIM.ratio).fill(0)],
-    mask: [true, true, true, true, true, true],
+    inputs: [new Array<number>(MODEL_INPUT_DIM.build).fill(0)],
+    stride: 1,
+    mask: [true],
     chosen: 0,
-    probs: [1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6, 1 / 6],
+    probs: [1],
   });
   const sample = (tiles: number): RewardSample => ({
     goldEarned: 0,
