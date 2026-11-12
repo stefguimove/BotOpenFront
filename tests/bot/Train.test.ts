@@ -23,11 +23,14 @@ import {
 } from "../../bot/train/reinforce";
 import {
   defaultTrainOptions,
+  formatEvalSummary,
   gameIDFor,
+  isBetterEval,
   loadCheckpoint,
   runEpisode,
   saveCheckpoint,
   train,
+  type EvalSummary,
 } from "../../bot/train/train";
 
 /**
@@ -315,6 +318,10 @@ describe("train", () => {
       const loaded = loadCheckpoint(path.join(dir, "latest.json"));
       expect(loaded.iteration).toBe(2);
       expect(loaded.weights).toEqual(result.weights);
+      // No evaluation ran, so nothing was ever "best": the run keeps its
+      // final weights and does not claim a best iteration.
+      expect(result.bestIteration).toBe(0);
+      expect(result.bestSummary).toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -378,4 +385,164 @@ describe("resume and periodic evaluation", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe("eval ranking", () => {
+  const summary = (overrides: Partial<EvalSummary> = {}): EvalSummary => ({
+    games: 10,
+    wins: 6,
+    deaths: 3,
+    tileShare: 0.2,
+    tileShareStd: 0.05,
+    winTicks: 3_000,
+    survivalTicks: 4_000,
+    meanArmy: 0.2,
+    meanTroopIncome: 20_000,
+    meanReward: 0.03,
+    behaviourCounts: { attack: 5 },
+    intentCounts: { attack: 5 },
+    ...overrides,
+  });
+
+  test("wins dominate the timings", () => {
+    // The rule the user asked for: 7/10 beats 6/10 whatever the clocks say.
+    const fastLoser = summary({
+      wins: 6,
+      winTicks: 1_000,
+      survivalTicks: 9_000,
+    });
+    const slowWinner = summary({
+      wins: 7,
+      winTicks: 5_000,
+      survivalTicks: 3_000,
+    });
+    expect(isBetterEval(slowWinner, fastLoser)).toBe(true);
+    expect(isBetterEval(fastLoser, slowWinner)).toBe(false);
+  });
+
+  test("with equal wins, the faster winner is better", () => {
+    const fast = summary({ wins: 7, winTicks: 2_000 });
+    const slow = summary({ wins: 7, winTicks: 3_500 });
+    expect(isBetterEval(fast, slow)).toBe(true);
+    expect(isBetterEval(slow, fast)).toBe(false);
+  });
+
+  test("with equal wins and no win clock, survival decides", () => {
+    const survivor = summary({ wins: 0, winTicks: null, survivalTicks: 6_000 });
+    const dies = summary({ wins: 0, winTicks: null, survivalTicks: 2_000 });
+    expect(isBetterEval(survivor, dies)).toBe(true);
+    expect(isBetterEval(dies, survivor)).toBe(false);
+  });
+
+  test("territory breaks the last tie", () => {
+    // Two policies that both survive the full episode and never win: without
+    // this tiebreak "no improvement" would fire while the bot was growing.
+    const small = summary({
+      wins: 0,
+      winTicks: null,
+      survivalTicks: 1_800,
+      tileShare: 0.02,
+    });
+    const big = summary({
+      wins: 0,
+      winTicks: null,
+      survivalTicks: 1_800,
+      tileShare: 0.06,
+    });
+    expect(isBetterEval(big, small)).toBe(true);
+    expect(isBetterEval(small, big)).toBe(false);
+  });
+
+  test("anything beats nothing, and equal is not better", () => {
+    expect(isBetterEval(summary(), null)).toBe(true);
+    expect(isBetterEval(summary(), summary())).toBe(false);
+  });
+
+  test("a tolerance lets a 1-game edge count as noise", () => {
+    const six = summary({ wins: 6 });
+    const seven = summary({ wins: 7 });
+    expect(isBetterEval(seven, six, 0)).toBe(true);
+    expect(isBetterEval(seven, six, 1)).toBe(false);
+  });
+
+  test("the summary line is self-sufficient", () => {
+    const line = formatEvalSummary(
+      "iteration 5 eval",
+      summary({ wins: 7, winTicks: 2_500, survivalTicks: 3_100 }),
+      true,
+    );
+    expect(line).toContain("wins 7/10");
+    expect(line).toContain("dead 3");
+    expect(line).toContain("win=2500t");
+    expect(line).toContain("surv=3100t");
+    expect(line).toContain("army=0.20");
+    expect(line).toContain("<= best");
+  });
+});
+
+describe("best checkpoint and early stopping", () => {
+  /** Short episodes so the evaluations stay cheap. */
+  function optionsFor(dir: string, overrides: Record<string, unknown> = {}) {
+    return defaultTrainOptions({
+      iterations: 6,
+      episodesPerIteration: 1,
+      episodeTicks: 40,
+      decisionInterval: 10,
+      config: compactConfig({ bots: 2, nations: 1 }),
+      seed: 9,
+      checkpointDir: dir,
+      saveEvery: 0,
+      evalEvery: 1,
+      evalGames: 1,
+      earlyStopPatience: 2,
+      log: () => {},
+      ...overrides,
+    });
+  }
+
+  test("evaluates every generation and writes best.json", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bot-best-"));
+    try {
+      const result = await train(optionsFor(dir));
+      // Something was evaluated, so a best exists and best.json points at it.
+      expect(result.bestSummary).not.toBeNull();
+      const best = loadCheckpoint(path.join(dir, "best.json"));
+      expect(best.iteration).toBe(result.bestIteration);
+      expect(best.weights).toEqual(result.weights);
+      expect(result.bestSummary?.games).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  test("stops early and hands back the best weights", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bot-early-"));
+    try {
+      // Patience 1: the run stops at the first evaluation that is not better.
+      const result = await train(
+        optionsFor(dir, { iterations: 20, earlyStopPatience: 1 }),
+      );
+      expect(result.stoppedEarly).toBe(true);
+      expect(result.history.length).toBeLessThan(20);
+      // The returned weights are the best ones, not the last played.
+      const best = loadCheckpoint(path.join(dir, "best.json"));
+      expect(best.weights).toEqual(result.weights);
+      expect(best.iteration).toBe(result.bestIteration);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  test("early stopping can be disabled", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bot-nostop-"));
+    try {
+      const result = await train(
+        optionsFor(dir, { iterations: 3, earlyStopPatience: 0 }),
+      );
+      expect(result.stoppedEarly).toBe(false);
+      expect(result.history).toHaveLength(3);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 120_000);
 });

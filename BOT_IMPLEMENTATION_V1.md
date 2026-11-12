@@ -1675,6 +1675,13 @@ monter sur une machine mieux dotée.
 l'affichage), continue la numérotation des itérations et la séquence de parties,
 et `--eval-every N` produit une ligne d'évaluation toutes les N itérations.
 
+Chaque évaluation joue `--eval-games` parties (défaut **10**) avec des seeds
+aléatoires et classe les poids selon : victoires → rapidité des victoires →
+durée de survie → territoire (voir `BOT_REWARD_V2.md` §8). Le meilleur modèle
+est écrit dans `best.json` ; `--early-stop-patience N` (défaut 3) arrête le run
+après N évaluations sans amélioration et restaure les meilleurs poids.
+`--no-early-stop` désactive.
+
 ### 21.8 Correctifs comportementaux (boucle d'attaque, Defense Post)
 
 Correctifs retenus après analyse d'un replay d'entraînement (le bot envoyait

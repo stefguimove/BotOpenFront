@@ -15,6 +15,7 @@ import {
 import {
   CHECKPOINT_VERSION,
   cloneWeights,
+  MODEL_NAMES,
   createWeights,
   fromCheckpoint,
   toCheckpoint,
@@ -44,10 +45,20 @@ export interface CheckpointFile {
   weights: AgentWeights;
 }
 
+/**
+ * Writes `iteration-000NN.json` plus the rolling pointers.
+ *
+ * `latest.json` always tracks the newest checkpoint (so `--resume` continues
+ * where the run stopped); `best.json` is written only when the evaluation
+ * improves, and is what a *finished* run should be played from — early
+ * stopping restores those weights, and a run can otherwise end on a degraded
+ * policy.
+ */
 export function saveCheckpoint(
   dir: string,
   iteration: number,
   weights: AgentWeights,
+  pointer = "latest.json",
 ): string {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(
@@ -60,7 +71,10 @@ export function saveCheckpoint(
     weights,
   };
   fs.writeFileSync(file, JSON.stringify(payload));
-  fs.writeFileSync(path.join(dir, "latest.json"), JSON.stringify(payload));
+  fs.writeFileSync(path.join(dir, pointer), JSON.stringify(payload));
+  if (pointer !== "latest.json") {
+    fs.writeFileSync(path.join(dir, "latest.json"), JSON.stringify(payload));
+  }
   return file;
 }
 
@@ -93,6 +107,11 @@ export interface TrainOptions {
   saveEvery: number;
   evalEvery: number;
   evalGames: number;
+  /**
+   * Stop after this many consecutive evaluations without a better score, and
+   * restore the best weights. 0 disables early stopping.
+   */
+  earlyStopPatience: number;
   saveReplayBest: boolean;
   replayDir: string;
   log: (message: string) => void;
@@ -125,7 +144,8 @@ export function defaultTrainOptions(
     checkpointDir: "bot/checkpoints",
     saveEvery: 5,
     evalEvery: 5,
-    evalGames: 1,
+    evalGames: 10,
+    earlyStopPatience: 3,
     saveReplayBest: false,
     replayDir: "records",
     log: (message) => console.log(message),
@@ -210,6 +230,94 @@ export interface IterationReport {
   updatedModels: ModelName[];
 }
 
+/**
+ * What one evaluation measured, aggregated over its games.
+ *
+ * The comparison order is the point: **wins dominate**, and the timing
+ * tie-breakers only decide between policies that won the same number of games.
+ * A model that wins 7 of 10 is better than one that wins 6 of 10 whatever the
+ * clocks say — a fast loser is still a loser.
+ */
+export interface EvalSummary {
+  games: number;
+  wins: number;
+  /** Games the bot was eliminated in. */
+  deaths: number;
+  /** Mean final tile share, and its standard deviation. */
+  tileShare: number;
+  tileShareStd: number;
+  /** Mean length of the games it WON, in ticks. Lower is better. */
+  winTicks: number | null;
+  /** Mean length of every game, in ticks. Higher is better. */
+  survivalTicks: number;
+  meanArmy: number;
+  meanTroopIncome: number;
+  meanReward: number;
+  behaviourCounts: Record<string, number>;
+  intentCounts: Record<string, number>;
+}
+
+/**
+ * Scores `a` against `b`: true when `a` is better.
+ *
+ *  1. more wins wins outright: 7/10 always beats 6/10, whatever the clocks;
+ *  2. same wins → shorter wins (faster to reach the threshold);
+ *  3. same wins and no win to time → longer survival;
+ *  4. still tied → more territory, so a run that is growing but not yet
+ *     winning is not mistaken for one that has stopped improving.
+ *
+ * `winsTolerance` exists because evaluations use *different random games*: an
+ * apparent 1-game edge over 10 is inside the noise of the field. It is 0 by
+ * default so the rule stays literally "7/10 beats 6/10".
+ */
+export function isBetterEval(
+  a: EvalSummary,
+  b: EvalSummary | null,
+  winsTolerance = 0,
+): boolean {
+  if (b === null) return true;
+  if (a.wins !== b.wins) {
+    return winsTolerance > 0
+      ? a.wins > b.wins + winsTolerance
+      : a.wins > b.wins;
+  }
+  // Same wins: the faster winner is better.
+  if (a.winTicks !== null && b.winTicks !== null) {
+    if (a.winTicks !== b.winTicks) return a.winTicks < b.winTicks;
+  } else if (a.winTicks !== null) {
+    return false; // b already won, and `a` has no win clock: same wins, so b.
+  } else if (b.winTicks !== null) {
+    return true;
+  }
+  // No win to time: the policy that survives longer is better.
+  if (a.survivalTicks !== b.survivalTicks) {
+    return a.survivalTicks > b.survivalTicks;
+  }
+  // Last resort: territory. Without it, two policies that both survive the
+  // whole episode and never win would tie forever, so "no improvement" would
+  // fire while the bot was visibly growing.
+  return a.tileShare > b.tileShare;
+}
+
+/** One-line, self-sufficient eval report: outcome, speed, behaviour, economy. */
+export function formatEvalSummary(
+  label: string,
+  s: EvalSummary,
+  best: boolean,
+): string {
+  const winClock = s.winTicks === null ? "-" : `${s.winTicks.toFixed(0)}t`;
+  return (
+    `${label}: wins ${s.wins}/${s.games} ` +
+    `(dead ${s.deaths}) ` +
+    `| win=${winClock} surv=${s.survivalTicks.toFixed(0)}t ` +
+    `| tiles=${s.tileShare.toFixed(3)}±${s.tileShareStd.toFixed(3)} ` +
+    `army=${s.meanArmy.toFixed(2)} troops/s=${s.meanTroopIncome.toFixed(0)} ` +
+    `act=${formatShares(s.behaviourCounts)} ` +
+    `reward=${s.meanReward.toFixed(3)}` +
+    (best ? "  <= best" : "")
+  );
+}
+
 export interface TrainResult {
   weights: AgentWeights;
   history: IterationReport[];
@@ -218,6 +326,10 @@ export interface TrainResult {
   games: number;
   /** Episodes per iteration actually used. */
   episodesPerIteration: number;
+  /** Iteration whose weights were returned (the best one, when evaluated). */
+  bestIteration: number;
+  bestSummary: EvalSummary | null;
+  stoppedEarly: boolean;
 }
 
 /**
@@ -239,6 +351,12 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
   // instead of replaying the ones the earlier run already learned from.
   let episodeCounter = startIteration * episodesPerIteration;
   let gamesPlayed = 0;
+  // Best-so-far bookkeeping: the run ends on the best policy, not the last one.
+  let bestSummary: EvalSummary | null = null;
+  let bestWeights: AgentWeights | null = null;
+  let bestIteration = startIteration;
+  let evaluationsWithoutImprovement = 0;
+  let stoppedEarly = false;
 
   const workers = Math.max(1, Math.min(options.workers, episodesPerIteration));
   const pool = workers > 1 ? new EpisodePool(workers) : null;
@@ -363,6 +481,9 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
       }
 
       if (options.evalEvery > 0 && i % options.evalEvery === 0) {
+        // Seeds keep varying between evaluations on purpose: a fixed eval set
+        // would be overfitted by the policy, and the score would stop meaning
+        // "plays well" and start meaning "plays these games well".
         const evaluation = await evaluateWeights(weights, {
           games: Math.max(1, options.evalGames),
           seed: options.seed + iteration,
@@ -374,15 +495,51 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
           replayDir: options.replayDir,
           log: () => {},
         });
-        const mean = (values: number[]): number =>
-          values.reduce((a, b) => a + b, 0) / Math.max(1, values.length);
+        const summary = evaluation.summary;
+        const improved = isBetterEval(summary, bestSummary);
+        if (improved) {
+          bestSummary = summary;
+          bestWeights = cloneWeights(weights);
+          bestIteration = iteration;
+          evaluationsWithoutImprovement = 0;
+          const file = saveCheckpoint(
+            options.checkpointDir,
+            iteration,
+            weights,
+            "best.json",
+          );
+          options.log(`new best -> ${file}`);
+        } else {
+          evaluationsWithoutImprovement += 1;
+        }
         options.log(
-          `iteration ${iteration} eval: ` +
-            `tileShare=${mean(evaluation.shares).toFixed(5)} ` +
-            `army=${mean(evaluation.troopRatios).toFixed(3)} ` +
-            `troops/s=${mean(evaluation.troopIncomes).toFixed(0)} ` +
-            `attack=${(100 * mean(evaluation.attackShares)).toFixed(0)}% ` +
-            `reward=${mean(evaluation.rewards).toFixed(4)}`,
+          formatEvalSummary(`iteration ${iteration} eval`, summary, improved),
+        );
+
+        const patience = Math.max(0, options.earlyStopPatience);
+        if (patience > 0 && evaluationsWithoutImprovement >= patience) {
+          // Degraded for `patience` evaluations: stop and keep the best.
+          stoppedEarly = true;
+          options.log(
+            `early stop: no improvement for ${evaluationsWithoutImprovement} ` +
+              `evaluations, best was iteration ${bestIteration}`,
+          );
+          break;
+        }
+      }
+    }
+
+    if (bestWeights !== null) {
+      // Hand back the best policy, and say so: silently returning a degraded
+      // final policy is how a run can "finish" worse than it ever was.
+      for (const name of MODEL_NAMES) weights[name] = bestWeights[name];
+      if (
+        stoppedEarly ||
+        bestIteration !== startIteration + options.iterations
+      ) {
+        options.log(
+          `restored best weights from iteration ${bestIteration} ` +
+            `(wins ${bestSummary?.wins ?? 0}/${bestSummary?.games ?? 0})`,
         );
       }
     }
@@ -393,6 +550,9 @@ export async function train(options: TrainOptions): Promise<TrainResult> {
       params: totalParams(weights),
       games: gamesPlayed,
       episodesPerIteration,
+      bestIteration,
+      bestSummary,
+      stoppedEarly,
     };
   } finally {
     await pool?.close();
@@ -448,12 +608,19 @@ export async function evaluateWeights(
   troopRatios: number[];
   troopIncomes: number[];
   attackShares: number[];
+  summary: EvalSummary;
 }> {
   const shares: number[] = [];
   const rewards: number[] = [];
   const troopRatios: number[] = [];
   const troopIncomes: number[] = [];
   const attackShares: number[] = [];
+  const ticks: number[] = [];
+  const winTicks: number[] = [];
+  const behaviourCounts: Record<string, number> = {};
+  const intentCounts: Record<string, number> = {};
+  let wins = 0;
+  let deaths = 0;
   for (let i = 0; i < options.games; i++) {
     const gameID = gameIDFor(options.seed + 1, 90_000 + i);
     const run = await runEpisode({
@@ -469,6 +636,18 @@ export async function evaluateWeights(
     });
     const stats = run.result.stats;
     shares.push(stats.tileShare);
+    ticks.push(stats.ticks);
+    if (stats.winner === "bot") {
+      wins += 1;
+      winTicks.push(stats.ticks);
+    }
+    if (!stats.alive) deaths += 1;
+    for (const [name, count] of Object.entries(stats.behaviourCounts ?? {})) {
+      behaviourCounts[name] = (behaviourCounts[name] ?? 0) + count;
+    }
+    for (const [name, count] of Object.entries(stats.intentCounts ?? {})) {
+      intentCounts[name] = (intentCounts[name] ?? 0) + count;
+    }
     rewards.push(run.steps.reduce((sum, s) => sum + s.reward, 0));
     troopRatios.push(stats.meanTroopRatio ?? 0);
     troopIncomes.push(stats.troopIncomePerSecond ?? 0);
@@ -504,7 +683,32 @@ export async function evaluateWeights(
       options.log(`replay ${file}`);
     }
   }
-  return { shares, rewards, troopRatios, troopIncomes, attackShares };
+  const mean = (values: number[]): number =>
+    values.reduce((a, b) => a + b, 0) / Math.max(1, values.length);
+  const meanShare = mean(shares);
+  const variance = mean(shares.map((v) => (v - meanShare) ** 2));
+  const summary: EvalSummary = {
+    games: shares.length,
+    wins,
+    deaths,
+    tileShare: meanShare,
+    tileShareStd: Math.sqrt(variance),
+    winTicks: winTicks.length === 0 ? null : mean(winTicks),
+    survivalTicks: mean(ticks),
+    meanArmy: mean(troopRatios),
+    meanTroopIncome: mean(troopIncomes),
+    meanReward: mean(rewards),
+    behaviourCounts,
+    intentCounts,
+  };
+  return {
+    shares,
+    rewards,
+    troopRatios,
+    troopIncomes,
+    attackShares,
+    summary,
+  };
 }
 
 export { toCheckpoint };

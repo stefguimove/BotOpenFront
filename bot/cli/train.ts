@@ -20,6 +20,7 @@ import { REINFORCE_V1 } from "../train/reinforce";
 import {
   defaultTrainOptions,
   evaluateWeights,
+  formatEvalSummary,
   loadCheckpoint,
   saveCheckpoint,
   train,
@@ -48,7 +49,10 @@ async function main(): Promise<void> {
     checkpointDir: strArg(args, "checkpoint-dir", "bot/checkpoints"),
     saveEvery: numArg(args, "save-every", 5),
     evalEvery: numArg(args, "eval-every", 5),
-    evalGames: numArg(args, "eval-games", 1),
+    evalGames: numArg(args, "eval-games", 10),
+    earlyStopPatience: boolArg(args, "no-early-stop", false)
+      ? 0
+      : numArg(args, "early-stop-patience", 3),
     saveReplayBest: boolArg(args, "save-replay-best", false),
     replayDir: strArg(args, "replay-dir", "records"),
     reinforce: {
@@ -85,9 +89,12 @@ async function main(): Promise<void> {
       `in parallel), ${result.params} parameters`,
   );
 
+  // Final evaluation of the weights actually returned (the best ones when the
+  // run evaluated at all), with the same random-seed protocol as the periodic
+  // evaluations.
   const evaluation = await evaluateWeights(result.weights, {
     games: options.evalGames,
-    seed: options.seed,
+    seed: options.seed + 10_000,
     config: options.config,
     episodeTicks: options.episodeTicks,
     decisionInterval: options.decisionInterval,
@@ -96,17 +103,19 @@ async function main(): Promise<void> {
     replayDir: options.replayDir,
     log: (message) => console.log(message),
   });
-  const meanShare =
-    evaluation.shares.reduce((a, b) => a + b, 0) /
-    Math.max(1, evaluation.shares.length);
-  console.log(`eval mean tile share: ${meanShare.toFixed(5)}`);
+  console.log(formatEvalSummary("final", evaluation.summary, false));
 
   const file = saveCheckpoint(
     options.checkpointDir,
-    options.startIteration + options.iterations,
+    result.bestIteration,
     result.weights,
+    "best.json",
   );
-  console.log(`final checkpoint ${file}`);
+  console.log(
+    `final checkpoint ${file} ` +
+      `(iteration ${result.bestIteration}` +
+      `${result.stoppedEarly ? ", early stop" : ""})`,
+  );
 }
 
 void main().catch((error) => {

@@ -288,3 +288,67 @@ gradient est plus propre, mais l'or ne guide plus les décisions intermédiaires
 Si l'apprentissage de l'économie (villes/usines) stagne, la première chose à
 essayer est de rendre l'or de nouveau dense **en potentiel sur `goldEarned`**
 (somme télescopique identique en valeur totale).
+
+---
+
+## 8. Évaluation, meilleur modèle et early stopping
+
+### 8.1 Mesures
+
+Chaque évaluation joue `--eval-games` parties (défaut **10**) avec les poids
+courants, en mode `eval` (sans roulette), et résume :
+
+| Mesure             | Sens                                                     |
+| ------------------ | -------------------------------------------------------- |
+| `wins N/M`         | parties gagnées — **critère dominant**                   |
+| `dead D`           | parties terminées par élimination                        |
+| `win=Xt`           | durée moyenne des parties **gagnées** (plus bas = mieux) |
+| `surv=Yt`          | durée moyenne de toutes les parties (plus haut = mieux)  |
+| `tiles=a±s`        | part de tuiles finale, moyenne et écart-type             |
+| `army`, `troops/s` | comportement : armée relative et revenu de troupes       |
+| `act=...`          | répartition des comportements choisis par le contrôleur  |
+| `reward`           | récompense cumulée de l'épisode                          |
+
+Une ligne, auto-suffisante :
+
+```text
+iteration 7 eval: wins 7/10 (dead 2) | win=2512t surv=3104t | tiles=0.412±0.083 army=0.23 troops/s=31200 act=attack 61%/wait 27%/diplomacy 12% reward=8.412  <= best
+```
+
+### 8.2 Ordre de comparaison
+
+`isBetterEval` classe deux évaluations, dans cet ordre strict :
+
+1. **plus de victoires** — 7/10 est toujours meilleur que 6/10, quels que soient
+   les temps ;
+2. à victoires égales, **victoire plus rapide** (`winTicks` plus petit) ;
+3. sans victoire à chronométrer, **survie plus longue** ;
+4. dernier départage : **plus de territoire** — sinon deux politiques qui
+   survivent tout l'épisode sans gagner seraient à égalité pour toujours, et
+   « pas d'amélioration » se déclencherait alors que le bot progresse.
+
+`winsTolerance` (0 par défaut) permet de traiter un écart d'une partie comme du
+bruit, puisque **les seeds d'évaluation sont aléatoires** : chaque évaluation
+joue des parties différentes, exprès, pour que la politique ne puisse pas
+sur-apprendre un ensemble fixe.
+
+### 8.3 Meilleur modèle et early stopping
+
+- À chaque évaluation meilleure, les poids sont copiés et `best.json` est
+  écrit (en plus de `iteration-000NN.json`).
+- `--early-stop-patience N` (défaut 3) arrête le run après N évaluations sans
+  amélioration ; `--no-early-stop` désactive.
+- À la sortie — early stop **ou** fin normale — les **meilleurs** poids sont
+  restaurés et renvoyés, et le CLI écrit le checkpoint final sous `best.json`.
+  Un run ne peut donc plus « finir » moins bon qu'il ne l'a été.
+
+`latest.json` continue de pointer sur le dernier checkpoint (pour `--resume`) ;
+`best.json` est ce depuis quoi il faut jouer.
+
+### 8.4 Coût
+
+L'évaluation est séquentielle, dans le thread principal. Avec les défauts
+(`--eval-games 10`, `--eval-every 5`, `--episodes 10`), elle ajoute 10 parties
+toutes les 5 générations, soit ~20 % de parties en plus. Monter `--eval-games`
+augmente d'autant ce coût ; baisser `--eval-every` aussi. Les deux se règlent
+indépendamment.
